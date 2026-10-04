@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One Source Inventory</title>
+<meta name="theme-color" content="#1A1A1A">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --red: #C41230; --red-dark: #9E0E27; --black: #1A1A1A; --ink: #2B2B2B;
+    --muted: #5E5E5E; --line: #D9D9D9; --wash: #F4F4F4; --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--white); color: var(--ink); }
+  body { font-family: 'Barlow', Arial, Helvetica, sans-serif; font-size: 18px; line-height: 1.45; }
+  h1, h2, .num { font-family: 'Barlow Semi Condensed', 'Arial Narrow', Arial, sans-serif; }
+  button, input, select { font: inherit; }
+  :focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+  .hidden { display: none !important; }
+
+  .bar { background: var(--black); border-bottom: 6px solid var(--red); color: var(--white); }
+  .bar-inner { padding: 16px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .bar h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: .2px; }
+  .bar .sub { font-size: 15px; color: #CFCFCF; }
+  .bar-right { display: flex; align-items: center; gap: 14px; font-size: 16px; color: #CFCFCF; }
+  .link-btn { background: none; border: 1px solid #6A6A6A; color: var(--white); padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 16px; }
+  .link-btn:hover { border-color: var(--white); }
+
+  main { padding: 24px 28px; }
+  section { margin-bottom: 40px; }
+  h2 { font-size: 24px; margin: 0 0 12px 0; color: var(--black); }
+  .asof { color: var(--muted); font-size: 16px; margin: 0 0 20px 0; }
+
+  .login { min-height: calc(100vh - 90px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .login-box { width: 100%; max-width: 380px; }
+  .login-box h2 { font-size: 30px; margin-bottom: 4px; }
+  .login-box p { color: var(--muted); margin: 0 0 24px 0; }
+  .pin { width: 100%; font-size: 34px; letter-spacing: 10px; text-align: center; padding: 14px; border: 2px solid var(--black); border-radius: 4px; }
+  .primary { background: var(--red); color: var(--white); border: 0; border-radius: 4px; padding: 14px 22px; font-weight: 600; font-size: 18px; cursor: pointer; }
+  .primary:hover { background: var(--red-dark); }
+  .primary[disabled] { opacity: .6; cursor: wait; }
+  .login-box .primary { width: 100%; margin-top: 16px; }
+  .error { color: var(--red-dark); font-weight: 600; min-height: 1.5em; margin-top: 12px; }
+
+  .overview { display: grid; grid-template-columns: 1fr; gap: 0 40px; }
+  @media (min-width: 1200px) { .overview { grid-template-columns: minmax(460px, 5fr) 7fr; align-items: start; } }
+
+  .share { display: flex; height: 64px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; background: var(--wash); }
+  .share div { display: flex; align-items: center; padding: 0 14px; color: var(--white); font-weight: 700; font-size: 20px; white-space: nowrap; overflow: hidden; min-width: 0; }
+  .share-legend { display: flex; flex-wrap: wrap; gap: 6px 22px; color: var(--muted); font-size: 16px; margin-bottom: 20px; }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; }
+  th { background: var(--black); color: var(--white); text-align: left; font-weight: 600; font-size: 16px; padding: 10px 12px; white-space: nowrap; }
+  td { padding: 10px 12px; border-top: 1px solid var(--line); font-size: 17px; vertical-align: top; }
+  td.r, th.r { text-align: right; }
+  tr.total td { font-weight: 700; background: var(--wash); }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: #FBEFF1; }
+  .hint { font-size: 15px; color: var(--muted); margin-top: 8px; }
+  .chart-wrap { position: relative; width: 100%; }
+
+  .search-row { display: grid; grid-template-columns: minmax(280px, 1fr) 260px auto auto auto; gap: 10px; margin-bottom: 14px; }
+  .search-row input, .search-row select { padding: 12px 14px; border: 2px solid var(--black); border-radius: 4px; background: var(--white); min-width: 0; }
+  .secondary { background: var(--white); color: var(--black); border: 2px solid var(--black); border-radius: 4px; padding: 12px 18px; font-weight: 600; cursor: pointer; }
+  .secondary[disabled] { opacity: .6; cursor: wait; }
+  .export { border-color: var(--red); color: var(--red-dark); }
+  .export:hover { background: #FBEFF1; }
+  .result-info { font-size: 17px; margin: 0 0 10px 0; }
+  .status { font-size: 16px; color: var(--muted); margin: -4px 0 10px 0; min-height: 1.4em; }
+  .results th { font-size: 15px; padding: 9px 10px; white-space: normal; vertical-align: bottom; }
+  .results td { font-size: 15px; padding: 8px 10px; white-space: nowrap; }
+  .results td.desc { white-space: normal; min-width: 180px; max-width: 300px; }
+  .results tbody tr:nth-child(even) td { background: #FAFAFA; }
+  .matched { color: var(--red-dark); font-weight: 600; }
+  .pager { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+  footer { padding: 16px 28px 28px; color: #8A8A8A; font-size: 14px; }
+
+  @media (max-width: 760px) {
+    body { font-size: 17px; }
+    .bar h1 { font-size: 22px; }
+    .bar-right .who { display: none; }
+    main { padding: 16px 14px; }
+    .search-row { grid-template-columns: 1fr 1fr; }
+    .search-row input, .search-row select, .search-row .export { grid-column: 1 / -1; }
+    .share { height: 52px; }
+    .share div { font-size: 17px; padding: 0 10px; }
+    .results thead { display: none; }
+    .results, .results tbody, .results tr, .results td { display: block; width: 100%; }
+    .results tr { border-top: 3px solid var(--black); padding: 8px 0; }
+    .results tbody tr:nth-child(even) td { background: none; }
+    .results td { border: 0; padding: 4px 12px; white-space: normal; display: flex; justify-content: space-between; gap: 12px; max-width: none; }
+    .results td::before { content: attr(data-label); color: var(--muted); font-size: 15px; flex: 0 0 44%; }
+    .results td:first-child { font-weight: 700; }
+    .scroll.results-scroll { border: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-inner">
+    <div>
+      <h1>One Source Inventory</h1>
+      <div class="sub">Logistics Warehouse, Inc.</div>
+    </div>
+    <div class="bar-right">
+      <span id="who" class="who"></span>
+      <button id="signOut" class="link-btn hidden" type="button">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<div id="loginView" class="login">
+  <div class="login-box">
+    <h2>Sign in</h2>
+    <p>Enter your PIN to view current inventory.</p>
+    <input id="pin" class="pin" type="password" inputmode="numeric" autocomplete="one-time-code" maxlength="8" aria-label="PIN">
+    <button id="loginBtn" class="primary" type="button">Sign in</button>
+    <div id="loginError" class="error" role="alert"></div>
+  </div>
+</div>
+
+<main id="appView" class="hidden">
+  <div class="overview">
+    <section>
+      <h2>Inventory by location</h2>
+      <p id="asOf" class="asof"></p>
+      <div id="share" class="share" aria-hidden="true"></div>
+      <div id="shareLegend" class="share-legend"></div>
+      <div class="scroll"><table id="locTable"></table></div>
+      <div class="hint">Select a location to list its pallets below.</div>
+    </section>
+    <section>
+      <h2>Pallets by material</h2>
+      <div class="chart-wrap" id="chartWrap"><canvas id="matChart" aria-label="Pallets by material and location"></canvas></div>
+    </section>
+  </div>
+
+  <section id="searchSection">
+    <h2>Find pallets</h2>
+    <div class="search-row">
+      <input id="q" type="search" placeholder="PGID, Pallet ID, LWH ID, material, bin class, receipt, Bill-To" aria-label="Search">
+      <select id="loc" aria-label="Location"><option value="ALL">All locations</option></select>
+      <button id="searchBtn" class="primary" type="button">Search</button>
+      <button id="clearBtn" class="secondary" type="button">Clear</button>
+      <button id="exportBtn" class="secondary export" type="button">Export to Excel</button>
+    </div>
+    <div id="status" class="status" role="status"></div>
+    <p id="resultInfo" class="result-info"></p>
+    <div class="scroll results-scroll"><table id="results" class="results"></table></div>
+    <div id="pager" class="pager"></div>
+  </section>
+</main>
+
+<footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
+
+<script>
+  var APP_VERSION = 'v1.0.0';
+  var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
+  var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
+  var COLS = [
+    { h: 'Location', k: 'location', w: 26 },
+    { h: 'Bay', k: 'bay', w: 18 },
+    { h: 'Material Number', k: 'material_number', w: 16 },
+    { h: 'Module Description', k: 'module_description', w: 36, cls: 'desc' },
+    { h: 'LWH ID', k: 'lwh_id', w: 12 },
+    { h: 'Pallet ID', k: 'pallet_id', w: 16 },
+    { h: 'INV Receipt', k: 'inv_receipt', w: 12 },
+    { h: 'Bill-To Reference', k: 'bill_to_ref', w: 18 },
+    { h: 'PGID', k: 'pgid', w: 15 },
+    { h: 'Bin Class', k: 'bin_class', w: 10 },
+    { h: 'PCS/Pallet', k: 'pcs_per_pallet', w: 11, num: true },
+    { h: 'Date Received', k: 'date_received', w: 13, date: true },
+    { h: 'Age (Days)', k: 'age_days', w: 10, num: true }
+  ];
+
+  var token = sessionStorage.getItem('oneph_token');
+  var summary = null, chart = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var fmt = function (n) { return Number(n || 0).toLocaleString('en-US'); };
+  $('ver').textContent = APP_VERSION;
+
+  function el(tag, text, cls) {
+    var e = document.createElement(tag);
+    if (text != null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+  function usDate(iso) {
+    var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? m[2] + '/' + m[3] + '/' + m[1] : '';
+  }
+  function ctTime(iso) {
+    if (!iso) return 'unknown';
+    return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric',
+      year: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' CT';
+  }
+
+  /* ---------- API ---------- */
+  function api(action, payload) {
+    var body = Object.assign({ action: action, token: token }, payload || {});
+    return fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          if (res.status === 401 && data.error === 'SESSION_EXPIRED') {
+            showLogin('Your session ended. Enter your PIN to continue.');
+            throw new Error('SESSION_EXPIRED');
+          }
+          if (!res.ok) throw new Error(data.error || ('Request failed (' + res.status + ')'));
+          return data;
+        });
+      }, function () { throw new Error('Could not reach the inventory service. Check your connection and try again.'); });
+  }
+  function fail(err) {
+    if (err && err.message === 'SESSION_EXPIRED') return;
+    $('status').textContent = (err && err.message) || String(err);
+  }
+
+  /* ---------- Sign in ---------- */
+  function showLogin(message) {
+    token = null;
+    sessionStorage.removeItem('oneph_token');
+    sessionStorage.removeItem('oneph_name');
+    $('appView').classList.add('hidden');
+    $('footer').classList.add('hidden');
+    $('signOut').classList.add('hidden');
+    $('who').textContent = '';
+    $('loginView').classList.remove('hidden');
+    $('loginError').textContent = message || '';
+    $('pin').value = '';
+    $('pin').focus();
+  }
+
+  function showApp() {
+    $('loginView').classList.add('hidden');
+    $('appView').classList.remove('hidden');
+    $('footer').classList.remove('hidden');
+    $('signOut').classList.remove('hidden');
+    $('who').textContent = sessionStorage.getItem('oneph_name') || '';
+    loadSummary();
+    runSearch(1);
+  }
+
+  function doLogin() {
+    var pin = $('pin').value.trim();
+    if (!/^\d{6,8}$/.test(pin)) { $('loginError').textContent = 'Enter your 6 to 8 digit PIN.'; return; }
+    $('loginBtn').disabled = true;
+    $('loginError').textContent = '';
+    api('login', { pin: pin }).then(function (res) {
+      $('loginBtn').disabled = false;
+      token = res.token;
+      sessionStorage.setItem('oneph_token', res.token);
+      sessionStorage.setItem('oneph_name', res.name);
+      showApp();
+    }).catch(function (err) {
+      $('loginBtn').disabled = false;
+      $('loginError').textContent = err.message;
+      $('pin').select();
+    });
+  }
+
+  $('loginBtn').addEventListener('click', doLogin);
+  $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+  $('signOut').addEventListener('click', function () {
+    var t = token;
+    showLogin('Signed out.');
+    fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'logout', token: t }) });
+  });
+
+  /* ---------- Summary ---------- */
+  function locLabel(code) {
+    var l = summary && summary.locations.filter(function (x) { return x.code === code; })[0];
+    return l ? l.label : code;
+  }
+
+  function loadSummary() {
+    $('asOf').textContent = 'Loading inventory...';
+    api('summary').then(function (s) {
+      summary = s;
+      $('asOf').textContent = 'Inventory as of ' + ctTime(s.as_of) + '. ' + fmt(s.total_pallets) + ' pallets, ' + fmt(s.total_pieces) + ' pieces.';
+      renderShare(s); renderLocTable(s); renderChart(s);
+      var sel = $('loc'), keep = sel.value;
+      while (sel.options.length > 1) sel.remove(1);
+      s.locations.forEach(function (l) { sel.appendChild(new Option(l.label, l.code)); });
+      sel.value = keep;
+      if (sel.value !== keep) sel.value = 'ALL';
+    }).catch(function (err) { $('asOf').textContent = ''; fail(err); });
+  }
+
+  function renderShare(s) {
+    var bar = $('share'), legend = $('shareLegend');
+    bar.innerHTML = ''; legend.innerHTML = '';
+    s.locations.forEach(function (l, i) {
+      var pct = s.total_pallets ? (l.pallets / s.total_pallets * 100) : 0;
+      var seg = el('div', Math.round(pct) + '%');
+      seg.style.width = pct + '%';
+      seg.style.background = LOC_COLORS[i % LOC_COLORS.length];
+      bar.appendChild(seg);
+      var item = el('span');
+      var sw = el('span', null, 'swatch'); sw.style.background = LOC_COLORS[i % LOC_COLORS.length];
+      item.appendChild(sw); item.appendChild(document.createTextNode(l.label));
+      legend.appendChild(item);
+    });
+  }
+
+  function renderLocTable(s) {
+    var t = $('locTable'); t.innerHTML = '';
+    var head = el('tr');
+    [['Location', ''], ['Pallets', 'r'], ['Pieces', 'r'], ['Materials', 'r']].forEach(function (h) { head.appendChild(el('th', h[0], h[1])); });
+    var thead = el('thead'); thead.appendChild(head); t.appendChild(thead);
+    var tb = el('tbody');
+    s.locations.forEach(function (l) {
+      var tr = el('tr', null, 'clickable');
+      tr.tabIndex = 0;
+      tr.appendChild(el('td', l.label));
+      tr.appendChild(el('td', fmt(l.pallets), 'r num'));
+      tr.appendChild(el('td', fmt(l.pieces), 'r num'));
+      tr.appendChild(el('td', fmt(l.materials), 'r num'));
+      var pick = function () { $('loc').value = l.code; $('q').value = ''; runSearch(1); $('searchSection').scrollIntoView({ behavior: 'smooth' }); };
+      tr.addEventListener('click', pick);
+      tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') pick(); });
+      tb.appendChild(tr);
+    });
+    var tot = el('tr', null, 'total');
+    tot.appendChild(el('td', 'Total'));
+    tot.appendChild(el('td', fmt(s.total_pallets), 'r num'));
+    tot.appendChild(el('td', fmt(s.total_pieces), 'r num'));
+    tot.appendChild(el('td', fmt(s.total_materials), 'r num'));
+    tb.appendChild(tot);
+    t.appendChild(tb);
+  }
+
+  function renderChart(s) {
+    if (typeof Chart === 'undefined') { $('chartWrap').textContent = 'Chart unavailable.'; return; }
+    var mats = s.materials.slice(0, 25);
+    $('chartWrap').style.height = Math.max(220, mats.length * 46 + 80) + 'px';
+    var datasets = s.locations.map(function (l, i) {
+      return {
+        label: l.label,
+        data: mats.map(function (m) { return (m.by_location && m.by_location[l.code]) || 0; }),
+        backgroundColor: LOC_COLORS[i % LOC_COLORS.length],
+        borderWidth: 0
+      };
+    });
+    if (chart) chart.destroy();
+    chart = new Chart($('matChart'), {
+      type: 'bar',
+      data: { labels: mats.map(function (m) { return m.material; }), datasets: datasets },
+      options: {
+        indexAxis: 'y', maintainAspectRatio: false, animation: false,
+        scales: {
+          x: { stacked: true, ticks: { font: { size: 15 } }, title: { display: true, text: 'Pallets', font: { size: 15 } } },
+          y: { stacked: true, ticks: { font: { size: 16 } } }
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 15 } } },
+          tooltip: { callbacks: {
+            title: function (items) { var m = mats[items[0].dataIndex]; return m.material + '  ' + (m.description || ''); },
+            label: function (c) { return c.dataset.label + ': ' + fmt(c.raw) + ' pallets'; }
+          } }
+        },
+        onClick: function (evt, els) {
+          if (!els.length) return;
+          $('q').value = mats[els[0].index].material;
+          $('loc').value = 'ALL';
+          runSearch(1);
+          $('searchSection').scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    });
+  }
+
+  /* ---------- Search ---------- */
+  function scopeText() { return $('loc').value === 'ALL' ? 'all locations' : locLabel($('loc').value); }
+
+  function runSearch(p) {
+    $('status').textContent = '';
+    $('resultInfo').textContent = 'Searching...';
+    $('results').innerHTML = '';
+    $('pager').innerHTML = '';
+    api('search', { query: $('q').value.trim(), location: $('loc').value, page: p || 1 })
+      .then(renderResults)
+      .catch(function (err) { $('resultInfo').textContent = ''; fail(err); });
+  }
+
+  function cellText(c, row) {
+    var v = row[c.k];
+    if (c.date) return usDate(v);
+    if (c.num) return v == null || v === '' ? '' : fmt(v);
+    return v == null ? '' : String(v);
+  }
+
+  function renderResults(r) {
+    var q = $('q').value.trim();
+    $('resultInfo').textContent = r.total
+      ? fmt(r.total) + ' pallets, ' + fmt(r.pieces) + ' pieces' + (q ? ' matching "' + q + '"' : '') + ' in ' + scopeText() + '.'
+      : 'No pallets match' + (q ? ' "' + q + '"' : '') + ' in ' + scopeText() + '. Check the number or try part of it.';
+
+    var t = $('results'); t.innerHTML = '';
+    if (!r.total) return;
+    var cols = COLS.slice();
+    if (q) cols.push({ h: 'Matched On', k: 'matched_on', cls: 'matched' });
+
+    var hr = el('tr');
+    cols.forEach(function (c) { hr.appendChild(el('th', c.h, c.num ? 'r' : '')); });
+    var thead = el('thead'); thead.appendChild(hr); t.appendChild(thead);
+
+    var tb = el('tbody');
+    r.rows.forEach(function (row) {
+      var tr = el('tr');
+      cols.forEach(function (c) {
+        var td = el('td', cellText(c, row), c.num ? 'r' : (c.cls || ''));
+        td.setAttribute('data-label', c.h);
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+
+    var pg = $('pager');
+    if (r.pages > 1) {
+      var prev = el('button', 'Previous', 'secondary'); prev.type = 'button'; prev.disabled = r.page <= 1;
+      prev.addEventListener('click', function () { runSearch(r.page - 1); });
+      var next = el('button', 'Next', 'secondary'); next.type = 'button'; next.disabled = r.page >= r.pages;
+      next.addEventListener('click', function () { runSearch(r.page + 1); });
+      var from = (r.page - 1) * r.pageSize + 1, to = Math.min(r.page * r.pageSize, r.total);
+      pg.appendChild(prev);
+      pg.appendChild(el('span', 'Showing ' + fmt(from) + ' to ' + fmt(to) + ' of ' + fmt(r.total)));
+      pg.appendChild(next);
+    }
+  }
+
+  $('searchBtn').addEventListener('click', function () { runSearch(1); });
+  $('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') runSearch(1); });
+  $('loc').addEventListener('change', function () { runSearch(1); });
+  $('clearBtn').addEventListener('click', function () { $('q').value = ''; $('loc').value = 'ALL'; runSearch(1); });
+
+  /* ---------- Export to Excel (built in the browser with SheetJS) ---------- */
+  function toSheet(rows) {
+    var aoa = [COLS.map(function (c) { return c.h; })];
+    rows.forEach(function (row) {
+      aoa.push(COLS.map(function (c) {
+        var v = row[c.k];
+        if (c.num) return v == null || v === '' ? '' : Number(v);
+        if (c.date) {
+          var m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+          return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : '';
+        }
+        return v == null ? '' : String(v); // IDs stay text so Excel won't use scientific notation
+      }));
+    });
+    var ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: 'mm/dd/yyyy' });
+    ws['!cols'] = COLS.map(function (c) { return { wch: c.w }; });
+    if (rows.length) ws['!autofilter'] = { ref: ws['!ref'] };
+    return ws;
+  }
+  function tabName(s) { return String(s).replace(/[\[\]\*\?\/\\:]/g, '-').slice(0, 31); }
+
+  function doExport() {
+    if (typeof XLSX === 'undefined') { $('status').textContent = 'Export is unavailable right now. Reload the page and try again.'; return; }
+    var btn = $('exportBtn');
+    var q = $('q').value.trim(), loc = $('loc').value;
+    btn.disabled = true; btn.textContent = 'Preparing file...';
+    $('status').textContent = 'Building your Excel file...';
+    api('export', { query: q, location: loc }).then(function (res) {
+      if (!res.total) throw new Error('Nothing to export. Change the search and try again.');
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, toSheet(res.rows), q || loc !== 'ALL' ? 'Results' : 'All Locations');
+      var codes = [];
+      res.rows.forEach(function (r) { if (codes.indexOf(r.location_code) === -1) codes.push(r.location_code); });
+      if (codes.length > 1) {
+        codes.forEach(function (code) {
+          var sub = res.rows.filter(function (r) { return r.location_code === code; });
+          XLSX.utils.book_append_sheet(wb, toSheet(sub), tabName(sub[0].location));
+        });
+      }
+      var now = new Date();
+      var stamp = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+      var name = 'One Source Inventory ' + stamp;
+      if (loc !== 'ALL') name += ' ' + locLabel(loc).replace(/\s*\([^)]*\)\s*$/, '');
+      if (q) name += ' ' + q.replace(/[^\w\- ]/g, '').slice(0, 30);
+      XLSX.writeFile(wb, name + '.xlsx');
+      $('status').textContent = 'Downloaded ' + name + '.xlsx (' + fmt(res.total) + ' pallets).';
+    }).catch(fail).then(function () { btn.disabled = false; btn.textContent = 'Export to Excel'; });
+  }
+  $('exportBtn').addEventListener('click', doExport);
+
+  /* ---------- Start ---------- */
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  if (token) showApp(); else showLogin();
+</script>
+</body>
+</html>
