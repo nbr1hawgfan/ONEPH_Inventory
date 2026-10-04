@@ -55,6 +55,12 @@ The Transactions export matches the daily file LWH used to email One Source:
 A "Load Summary" tab is added at the end. The Location filter (v1.3.0) narrows the screen, the totals,
 and the export to one warehouse. Tab names come from `oneph_app_locations.short_name`.
 
+## Quick links (v1.4.0)
+After sign-in, buttons for Proof of Delivery (the shared Drive folder) and Load Check-In appear next to
+the tabs and open in a new tab. The URLs live in Supabase table `oneph_app_links` and are only sent
+after a valid PIN, so they aren't exposed in this public repo. To add, change, or hide a link, edit that
+table (label, url, hint, sort_order, active). No app update is needed.
+
 ## Excel export
 The workbook is built in the browser with SheetJS. IDs stay as text, so Excel won't convert them
 to scientific notation. Each export gets one tab per location plus autofilters. The free SheetJS

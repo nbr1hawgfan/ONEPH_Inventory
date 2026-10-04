@@ -91,6 +91,11 @@
   .tab { background: none; border: 0; border-bottom: 4px solid transparent; padding: 14px 18px 10px; font-size: 18px; font-weight: 600; color: var(--muted); cursor: pointer; }
   .tab:hover { color: var(--black); }
   .tab[aria-selected="true"] { color: var(--black); border-bottom-color: var(--red); }
+  .quick-links { margin-left: auto; display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .qlink { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 2px solid var(--black); border-radius: 4px;
+           color: var(--black); text-decoration: none; font-weight: 600; font-size: 16px; white-space: nowrap; background: var(--white); }
+  .qlink:hover { background: var(--black); color: var(--white); }
+  .qlink svg { width: 15px; height: 15px; flex: 0 0 auto; }
 
   /* Shared controls */
   .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-bottom: 14px; }
@@ -127,7 +132,9 @@
     body { font-size: 17px; }
     .bar h1 { font-size: 22px; }
     .bar-right .who { display: none; }
-    .tabs { padding: 0 8px; overflow-x: auto; }
+    .tabs { padding: 0 8px; overflow-x: auto; flex-wrap: wrap; }
+    .quick-links { margin-left: 0; width: 100%; padding: 0 0 10px 4px; }
+    .qlink { font-size: 15px; padding: 7px 11px; }
     .tab { padding: 12px 12px 8px; font-size: 16px; white-space: nowrap; }
     main { padding: 16px 14px; }
     .search-row { grid-template-columns: 1fr 1fr; }
@@ -174,6 +181,7 @@
   <button class="tab" role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
   <button class="tab" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
   <button class="tab" role="tab" data-tab="lookup" aria-selected="false">Bulk Lookup</button>
+  <div id="quickLinks" class="quick-links" aria-label="Quick links"></div>
 </nav>
 
 <main id="appView" class="hidden">
@@ -268,7 +276,7 @@
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.3.0';
+  var APP_VERSION = 'v1.4.0';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -340,6 +348,7 @@
     $('footer').classList.add('hidden');
     $('signOut').classList.add('hidden');
     $('who').textContent = '';
+    $('quickLinks').innerHTML = '';
     $('loginView').classList.remove('hidden');
     $('loginError').textContent = message || '';
     $('pin').value = '';
@@ -352,6 +361,7 @@
     $('tabs').classList.remove('hidden');
     $('footer').classList.remove('hidden');
     showTab((location.hash || '#inventory').slice(1));
+    loadLinks();
     $('signOut').classList.remove('hidden');
     $('who').textContent = sessionStorage.getItem('oneph_name') || '';
     loadSummary();
@@ -602,6 +612,23 @@
     }).catch(fail).then(function () { btn.disabled = false; btn.textContent = 'Export to Excel'; });
   }
   $('exportBtn').addEventListener('click', doExport);
+
+  /* ---------- Quick links (served after sign-in, never stored in this public repo) ---------- */
+  var EXT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+  function loadLinks() {
+    api('links').then(function (links) {
+      var box = $('quickLinks'); box.innerHTML = '';
+      (links || []).forEach(function (l) {
+        if (!/^https:\/\//i.test(l.url)) return;
+        var a = el('a', null, 'qlink');
+        a.href = l.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.title = (l.hint ? l.hint + ' ' : '') + '(opens in a new tab)';
+        a.appendChild(document.createTextNode(l.label));
+        a.insertAdjacentHTML('beforeend', EXT_ICON);
+        box.appendChild(a);
+      });
+    }).catch(function () {});
+  }
 
   /* ---------- Tabs ---------- */
   var loadedTabs = {};
