@@ -35,6 +35,25 @@ New warehouses show up automatically. To give one a friendly name, run this in S
 ## Updating the app
 Edit the files and bump `APP_VERSION` in index.html and `CACHE` in sw.js so installed copies refresh.
 
+## Tabs (v1.1.0)
+- **Inventory:** current pallets by location, search, and export.
+- **Transactions:** receipts and shipments by date range (defaults to the previous business day),
+  at the load level with the pallets underneath. Exports a Loads tab and a Pallets tab. Ranges are
+  limited to 93 days. Data comes from the toolkit's load_details and transaction_history.
+- **Bulk Lookup:** paste up to 2,000 Pallet IDs, PGIDs, or LWH IDs. Each comes back as In inventory,
+  Shipped (with date), or Not found, and the results export to Excel. A PGID covers a group of
+  pallets, so it can return several rows.
+
+## Transactions export format (v1.2.0)
+The Transactions export matches the daily file LWH used to email One Source:
+- one tab per warehouse ("5th Street Transactions", "Zero St. Transactions")
+- the same 14 columns: Warehouse, Warehouse Name, ControlNumber, Pallet Number, Transaction Type,
+  PalletGroup, INV_Receipt, BillToRefNum, SubCustNm, ItemNm, Item Description, BinCLass, QTY,
+  Transaction Date
+- IDs stored as whole numbers and dates formatted mm-dd-yy, as in the WMS file
+- rows sorted by receipt
+A "Load Summary" tab is added at the end. Tab names come from `oneph_app_locations.short_name`.
+
 ## Excel export
 The workbook is built in the browser with SheetJS. IDs stay as text, so Excel won't convert them
 to scientific notation. Each export gets one tab per location plus autofilters. The free SheetJS

@@ -80,15 +80,55 @@
   .results th { font-size: 15px; padding: 9px 10px; white-space: normal; vertical-align: bottom; }
   .results td { font-size: 15px; padding: 8px 10px; white-space: nowrap; }
   .results td.desc { white-space: normal; min-width: 180px; max-width: 300px; }
+  .results td.wrap { white-space: normal; min-width: 120px; max-width: 220px; }
   .results tbody tr:nth-child(even) td { background: #FAFAFA; }
   .matched { color: var(--red-dark); font-weight: 600; }
   .pager { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
   footer { padding: 16px 28px 28px; color: #8A8A8A; font-size: 14px; }
 
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--white); position: sticky; top: 0; z-index: 5; }
+  .tab { background: none; border: 0; border-bottom: 4px solid transparent; padding: 14px 18px 10px; font-size: 18px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .tab:hover { color: var(--black); }
+  .tab[aria-selected="true"] { color: var(--black); border-bottom-color: var(--red); }
+
+  /* Shared controls */
+  .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-bottom: 14px; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: var(--muted); }
+  .field input, .field select { padding: 11px 12px; border: 2px solid var(--black); border-radius: 4px; background: var(--white); color: var(--ink); font-size: 17px; }
+  .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip { background: var(--white); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font-size: 15px; cursor: pointer; color: var(--ink); }
+  .chip:hover { border-color: var(--black); }
+  .chip.on { background: var(--black); border-color: var(--black); color: var(--white); }
+
+  /* Totals strip */
+  .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 4px; margin-bottom: 22px; }
+  .totals > div { padding: 14px 18px; border-left: 6px solid var(--black); }
+  .totals > div + div { border-top: 0; }
+  .totals .in { border-left-color: var(--red); }
+  .totals .label { font-size: 15px; color: var(--muted); }
+  .totals .big { font-family: 'Barlow Semi Condensed', 'Arial Narrow', Arial, sans-serif; font-size: 30px; font-weight: 700; color: var(--black); line-height: 1.15; }
+  .totals .small { font-size: 16px; color: var(--ink); }
+  h3 { font-size: 20px; margin: 22px 0 10px 0; color: var(--black); font-family: 'Barlow Semi Condensed', 'Arial Narrow', Arial, sans-serif; }
+  tr.selected td { background: #FBEFF1 !important; }
+  .dir-in { color: var(--red-dark); font-weight: 600; }
+  .dir-out { color: var(--black); font-weight: 600; }
+
+  /* Lookup */
+  .paste { width: 100%; min-height: 150px; padding: 12px 14px; border: 2px solid var(--black); border-radius: 4px; font: 16px/1.5 Consolas, 'Courier New', monospace; resize: vertical; }
+  .lk-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+  .lk-stats .chip b { font-weight: 700; margin-left: 4px; }
+  .st-in { font-weight: 600; color: var(--black); }
+  .st-ship { font-weight: 600; color: #5A5A5A; }
+  .st-gone { font-weight: 600; color: #8A5A00; }
+  .st-none { font-weight: 700; color: var(--red-dark); }
+
   @media (max-width: 760px) {
     body { font-size: 17px; }
     .bar h1 { font-size: 22px; }
     .bar-right .who { display: none; }
+    .tabs { padding: 0 8px; overflow-x: auto; }
+    .tab { padding: 12px 12px 8px; font-size: 16px; white-space: nowrap; }
     main { padding: 16px 14px; }
     .search-row { grid-template-columns: 1fr 1fr; }
     .search-row input, .search-row select, .search-row .export { grid-column: 1 / -1; }
@@ -130,7 +170,14 @@
   </div>
 </div>
 
+<nav id="tabs" class="tabs hidden" role="tablist">
+  <button class="tab" role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
+  <button class="tab" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
+  <button class="tab" role="tab" data-tab="lookup" aria-selected="false">Bulk Lookup</button>
+</nav>
+
 <main id="appView" class="hidden">
+ <div id="panel-inventory" class="panel">
   <div class="overview">
     <section>
       <h2>Inventory by location</h2>
@@ -160,12 +207,65 @@
     <div class="scroll results-scroll"><table id="results" class="results"></table></div>
     <div id="pager" class="pager"></div>
   </section>
+ </div>
+
+ <!-- Transactions -->
+ <div id="panel-transactions" class="panel hidden">
+  <section>
+    <h2>Receipts and shipments</h2>
+    <div class="quick" id="txQuick">
+      <button class="chip" type="button" data-range="prevbiz">Previous business day</button>
+      <button class="chip" type="button" data-range="today">Today</button>
+      <button class="chip" type="button" data-range="last7">Last 7 days</button>
+      <button class="chip" type="button" data-range="month">This month</button>
+      <button class="chip" type="button" data-range="lastmonth">Last month</button>
+    </div>
+    <div class="controls">
+      <label class="field">From<input id="txFrom" type="date"></label>
+      <label class="field">To<input id="txTo" type="date"></label>
+      <label class="field">Type
+        <select id="txDir"><option value="ALL">Receipts and shipments</option><option value="Inbound">Receipts only</option><option value="Outbound">Shipments only</option></select>
+      </label>
+      <button id="txShow" class="primary" type="button">Show</button>
+      <button id="txExport" class="secondary export" type="button">Export to Excel</button>
+    </div>
+    <div id="txStatus" class="status" role="status"></div>
+    <div id="txTotals" class="totals hidden"></div>
+
+    <h3 id="txLoadsHead" class="hidden">Loads</h3>
+    <div class="hint hidden" id="txLoadsHint" style="margin:-4px 0 10px 0;">Select a load to show only its pallets below. Select it again to show all.</div>
+    <div class="scroll"><table id="txLoads" class="results"></table></div>
+
+    <h3 id="txPalletsHead" class="hidden">Pallets</h3>
+    <p id="txPalletInfo" class="result-info"></p>
+    <div class="scroll results-scroll"><table id="txPallets" class="results"></table></div>
+    <div id="txPager" class="pager"></div>
+  </section>
+ </div>
+
+ <!-- Bulk lookup -->
+ <div id="panel-lookup" class="panel hidden">
+  <section>
+    <h2>Bulk lookup</h2>
+    <p class="asof">Paste Pallet IDs, PGIDs, or LWH IDs, one per line or separated by commas or spaces. You can copy a column straight from Excel. Up to 2,000 at a time.</p>
+    <textarea id="lkIds" class="paste" spellcheck="false" aria-label="IDs to look up" placeholder="265510901393&#10;26075700133&#10;4302606"></textarea>
+    <div class="controls" style="margin-top:12px;">
+      <button id="lkGo" class="primary" type="button">Look up</button>
+      <button id="lkClear" class="secondary" type="button">Clear</button>
+      <button id="lkExport" class="secondary export" type="button">Export to Excel</button>
+    </div>
+    <div id="lkStatus" class="status" role="status"></div>
+    <div id="lkStats" class="lk-stats"></div>
+    <div class="hint hidden" id="lkHint" style="margin:-4px 0 10px 0;">A PGID covers a group of pallets, so one PGID can return several rows.</div>
+    <div class="scroll results-scroll"><table id="lkTable" class="results"></table></div>
+  </section>
+ </div>
 </main>
 
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.0.0';
+  var APP_VERSION = 'v1.2.0';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -232,6 +332,7 @@
     sessionStorage.removeItem('oneph_token');
     sessionStorage.removeItem('oneph_name');
     $('appView').classList.add('hidden');
+    $('tabs').classList.add('hidden');
     $('footer').classList.add('hidden');
     $('signOut').classList.add('hidden');
     $('who').textContent = '';
@@ -244,7 +345,9 @@
   function showApp() {
     $('loginView').classList.add('hidden');
     $('appView').classList.remove('hidden');
+    $('tabs').classList.remove('hidden');
     $('footer').classList.remove('hidden');
+    showTab((location.hash || '#inventory').slice(1));
     $('signOut').classList.remove('hidden');
     $('who').textContent = sessionStorage.getItem('oneph_name') || '';
     loadSummary();
@@ -446,10 +549,11 @@
   $('clearBtn').addEventListener('click', function () { $('q').value = ''; $('loc').value = 'ALL'; runSearch(1); });
 
   /* ---------- Export to Excel (built in the browser with SheetJS) ---------- */
-  function toSheet(rows) {
-    var aoa = [COLS.map(function (c) { return c.h; })];
+  function toSheet(rows, cols) {
+    cols = cols || COLS;
+    var aoa = [cols.map(function (c) { return c.h; })];
     rows.forEach(function (row) {
-      aoa.push(COLS.map(function (c) {
+      aoa.push(cols.map(function (c) {
         var v = row[c.k];
         if (c.num) return v == null || v === '' ? '' : Number(v);
         if (c.date) {
@@ -460,7 +564,7 @@
       }));
     });
     var ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: 'mm/dd/yyyy' });
-    ws['!cols'] = COLS.map(function (c) { return { wch: c.w }; });
+    ws['!cols'] = cols.map(function (c) { return { wch: c.w || 14 }; });
     if (rows.length) ws['!autofilter'] = { ref: ws['!ref'] };
     return ws;
   }
@@ -494,6 +598,351 @@
     }).catch(fail).then(function () { btn.disabled = false; btn.textContent = 'Export to Excel'; });
   }
   $('exportBtn').addEventListener('click', doExport);
+
+  /* ---------- Tabs ---------- */
+  var loadedTabs = {};
+  function showTab(name) {
+    if (['inventory', 'transactions', 'lookup'].indexOf(name) === -1) name = 'inventory';
+    document.querySelectorAll('.tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.tab === name)); });
+    document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('hidden', p.id !== 'panel-' + name); });
+    if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+    if (name === 'transactions' && !loadedTabs.transactions) { loadedTabs.transactions = true; setRange('prevbiz'); loadTx(); }
+    if (name === 'lookup') setTimeout(function () { $('lkIds').focus(); }, 0);
+  }
+  document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { showTab(t.dataset.tab); }); });
+
+  /* ---------- Transactions ---------- */
+  var TX_LOAD_COLS = [
+    { h: 'Date', k: 'date', w: 12, date: true },
+    { h: 'Type', k: 'direction', w: 10, dir: true },
+    { h: 'Location', k: 'location', w: 26 },
+    { h: 'INV Receipt', k: 'inv_receipt', w: 12 },
+    { h: 'Bill-To Reference', k: 'bill_to_ref', w: 18 },
+    { h: 'Material Number(s)', k: 'materials', w: 20 },
+    { h: 'Pallets', k: 'pallets', w: 9, num: true },
+    { h: 'Pieces', k: 'pieces', w: 10, num: true },
+    { h: 'Carrier', k: 'carrier', w: 26, cls: 'wrap' },
+    { h: 'Trailer', k: 'trailer', w: 12 },
+    { h: 'Seal', k: 'seal', w: 12 },
+    { h: 'Shipper', k: 'shipper', w: 30, cls: 'wrap' },
+    { h: 'Consignee', k: 'consignee', w: 30, cls: 'wrap' },
+    { h: 'Status', k: 'status', w: 12 }
+  ];
+  var TX_PALLET_COLS = [
+    { h: 'Date', k: 'date', w: 12, date: true },
+    { h: 'Type', k: 'direction', w: 10, dir: true },
+    { h: 'Location', k: 'location', w: 26 },
+    { h: 'INV Receipt', k: 'inv_receipt', w: 12 },
+    { h: 'Bill-To Reference', k: 'bill_to_ref', w: 18 },
+    { h: 'LWH ID', k: 'lwh_id', w: 12 },
+    { h: 'Pallet ID', k: 'pallet_id', w: 16 },
+    { h: 'PGID', k: 'pgid', w: 15 },
+    { h: 'Bin Class', k: 'bin_class', w: 10 },
+    { h: 'Material Number', k: 'material_number', w: 16 },
+    { h: 'Module Description', k: 'module_description', w: 36, cls: 'desc' },
+    { h: 'PCS', k: 'pcs', w: 8, num: true }
+  ];
+  var tx = null, txReceipt = null, txPage = 1;
+
+  function isoDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function setRange(kind) {
+    var now = new Date(), f = new Date(now), t = new Date(now);
+    if (kind === 'prevbiz') {
+      f.setDate(f.getDate() - 1);
+      while (f.getDay() === 0 || f.getDay() === 6) f.setDate(f.getDate() - 1);
+      t = new Date(f);
+    } else if (kind === 'last7') { f.setDate(f.getDate() - 6); }
+    else if (kind === 'month') { f = new Date(now.getFullYear(), now.getMonth(), 1); }
+    else if (kind === 'lastmonth') { f = new Date(now.getFullYear(), now.getMonth() - 1, 1); t = new Date(now.getFullYear(), now.getMonth(), 0); }
+    $('txFrom').value = isoDate(f); $('txTo').value = isoDate(t);
+    document.querySelectorAll('#txQuick .chip').forEach(function (c) { c.classList.toggle('on', c.dataset.range === kind); });
+  }
+  document.querySelectorAll('#txQuick .chip').forEach(function (c) {
+    c.addEventListener('click', function () { setRange(c.dataset.range); loadTx(); });
+  });
+  ['txFrom', 'txTo'].forEach(function (id) {
+    $(id).addEventListener('change', function () { document.querySelectorAll('#txQuick .chip').forEach(function (c) { c.classList.remove('on'); }); });
+  });
+  $('txShow').addEventListener('click', loadTx);
+  $('txDir').addEventListener('change', loadTx);
+
+  function rangeText(from, to) { return from === to ? usDate(from) : usDate(from) + ' to ' + usDate(to); }
+
+  function loadTx() {
+    var from = $('txFrom').value, to = $('txTo').value;
+    if (!from || !to) { $('txStatus').textContent = 'Choose a From and To date.'; return; }
+    $('txStatus').textContent = 'Loading transactions...';
+    ['txLoads', 'txPallets'].forEach(function (id) { $(id).innerHTML = ''; });
+    $('txPager').innerHTML = ''; $('txPalletInfo').textContent = '';
+    api('transactions', { from: from, to: to, direction: $('txDir').value }).then(function (d) {
+      tx = d; txReceipt = null; txPage = 1;
+      var capped = d.from !== (from < to ? from : to);
+      $('txStatus').textContent = capped ? 'Ranges are limited to 93 days. Showing ' + rangeText(d.from, d.to) + '.' : '';
+      renderTx();
+    }).catch(function (err) { $('txStatus').textContent = ''; if (err.message !== 'SESSION_EXPIRED') $('txStatus').textContent = err.message; });
+  }
+
+  function cellFor(c, row) {
+    var v = row[c.k];
+    if (c.date) return usDate(v);
+    if (c.num) return v == null || v === '' ? '' : fmt(v);
+    if (c.dir) return v === 'Inbound' ? 'Receipt' : v === 'Outbound' ? 'Shipment' : (v || '');
+    return v == null ? '' : String(v);
+  }
+
+  function drawTable(table, cols, rows, onRowClick, selectedKey) {
+    table.innerHTML = '';
+    var hr = el('tr');
+    cols.forEach(function (c) { hr.appendChild(el('th', c.h, c.num ? 'r' : '')); });
+    var thead = el('thead'); thead.appendChild(hr); table.appendChild(thead);
+    var tb = el('tbody');
+    rows.forEach(function (row) {
+      var tr = el('tr', null, onRowClick ? 'clickable' : '');
+      if (selectedKey && selectedKey(row)) tr.classList.add('selected');
+      cols.forEach(function (c) {
+        var cls = c.num ? 'r' : (c.cls || '');
+        if (c.dir) cls = row[c.k] === 'Inbound' ? 'dir-in' : 'dir-out';
+        if (c.statusCls) cls = c.statusCls(row);
+        var td = el('td', cellFor(c, row), cls);
+        td.setAttribute('data-label', c.h);
+        tr.appendChild(td);
+      });
+      if (onRowClick) {
+        tr.tabIndex = 0;
+        tr.addEventListener('click', function () { onRowClick(row); });
+        tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') onRowClick(row); });
+      }
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+  }
+
+  function renderTx() {
+    var d = tx, t = d.totals, dir = $('txDir').value;
+    var box = $('txTotals'); box.innerHTML = ''; box.classList.remove('hidden');
+    var card = function (cls, label, loads, pallets, pieces) {
+      var c = el('div', null, cls);
+      c.appendChild(el('div', label + ', ' + rangeText(d.from, d.to), 'label'));
+      c.appendChild(el('div', fmt(pallets) + ' pallets', 'big'));
+      c.appendChild(el('div', fmt(loads) + ' loads, ' + fmt(pieces) + ' pieces', 'small'));
+      box.appendChild(c);
+    };
+    if (dir !== 'Outbound') card('in', 'Received', t.inbound_loads, t.inbound_pallets, t.inbound_pieces);
+    if (dir !== 'Inbound') card('out', 'Shipped', t.outbound_loads, t.outbound_pallets, t.outbound_pieces);
+
+    var hasLoads = d.loads.length > 0;
+    $('txLoadsHead').classList.toggle('hidden', !hasLoads);
+    $('txLoadsHint').classList.toggle('hidden', !hasLoads);
+    $('txPalletsHead').classList.toggle('hidden', !d.pallets.length);
+    if (hasLoads) {
+      drawTable($('txLoads'), TX_LOAD_COLS, d.loads, function (row) {
+        txReceipt = txReceipt === row.inv_receipt ? null : row.inv_receipt;
+        txPage = 1; renderTx();
+      }, function (row) { return row.inv_receipt === txReceipt; });
+    } else {
+      $('txLoads').innerHTML = '';
+    }
+    if (!d.pallets.length && !hasLoads) {
+      $('txPalletInfo').textContent = 'No receipts or shipments for ' + rangeText(d.from, d.to) + '.';
+      $('txPallets').innerHTML = ''; $('txPager').innerHTML = '';
+      return;
+    }
+    renderTxPallets();
+  }
+
+  function renderTxPallets() {
+    var rows = txReceipt ? tx.pallets.filter(function (p) { return p.inv_receipt === txReceipt; }) : tx.pallets;
+    var size = 100, pages = Math.max(1, Math.ceil(rows.length / size));
+    txPage = Math.min(Math.max(1, txPage), pages);
+    var pcs = 0; rows.forEach(function (r) { pcs += Number(r.pcs) || 0; });
+    $('txPalletInfo').textContent = fmt(rows.length) + ' pallets, ' + fmt(pcs) + ' pieces' +
+      (txReceipt ? ' on INV Receipt ' + txReceipt + '.' : '.');
+    drawTable($('txPallets'), TX_PALLET_COLS, rows.slice((txPage - 1) * size, txPage * size));
+    var pg = $('txPager'); pg.innerHTML = '';
+    if (pages > 1) {
+      var prev = el('button', 'Previous', 'secondary'); prev.type = 'button'; prev.disabled = txPage <= 1;
+      prev.addEventListener('click', function () { txPage--; renderTxPallets(); });
+      var next = el('button', 'Next', 'secondary'); next.type = 'button'; next.disabled = txPage >= pages;
+      next.addEventListener('click', function () { txPage++; renderTxPallets(); });
+      pg.appendChild(prev);
+      pg.appendChild(el('span', 'Showing ' + fmt((txPage - 1) * size + 1) + ' to ' + fmt(Math.min(txPage * size, rows.length)) + ' of ' + fmt(rows.length)));
+      pg.appendChild(next);
+    }
+  }
+
+  function dirSheetRows(rows) {
+    return rows.map(function (r) {
+      var o = Object.assign({}, r);
+      o.direction = r.direction === 'Inbound' ? 'Receipt' : r.direction === 'Outbound' ? 'Shipment' : r.direction;
+      return o;
+    });
+  }
+
+  /* Daily transaction file: same layout as the file LWH has been emailing One Source.
+     One tab per warehouse, these exact column names, IDs as whole numbers (format 0). */
+  var TX_FILE_COLS = [
+    { h: 'Warehouse',        k: 'wms_location',       w: 16.8 },
+    { h: 'Warehouse Name',   k: 'wms_location',       w: 16 },
+    { h: 'ControlNumber',    k: 'lwh_id',             w: 14.5, id: true },
+    { h: 'Pallet Number',    k: 'pallet_id',          w: 15.6, id: true },
+    { h: 'Transaction Type', k: 'direction',          w: 16.8 },
+    { h: 'PalletGroup',      k: 'pgid',               w: 14, id: true },
+    { h: 'INV_Receipt',      k: 'inv_receipt',        w: 12.2, id: true },
+    { h: 'BillToRefNum',     k: 'bill_to_ref',        w: 13.4, id: true },
+    { h: 'SubCustNm',        k: 'sub_customer',       w: 12.5 },
+    { h: 'ItemNm',           k: 'material_number',    w: 11.1, id: true },
+    { h: 'Item Description', k: 'module_description', w: 37 },
+    { h: 'BinCLass',         k: 'bin_class',          w: 10, id: true },
+    { h: 'QTY',              k: 'pcs',                w: 9, num: true },
+    { h: 'Transaction Date', k: 'date',               w: 16, date: true }
+  ];
+
+  function txFileSheet(rows) {
+    var aoa = [TX_FILE_COLS.map(function (c) { return c.h; })];
+    rows.forEach(function (r) {
+      aoa.push(TX_FILE_COLS.map(function (c) {
+        var v = r[c.k];
+        if (c.date) {
+          var m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+          return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : '';
+        }
+        if (c.num) return v == null || v === '' ? '' : Number(v);
+        if (c.id) {
+          var t = String(v == null ? '' : v).trim();
+          return /^\d{1,15}$/.test(t) ? Number(t) : t; // whole numbers, like the WMS file
+        }
+        return v == null ? '' : String(v);
+      }));
+    });
+    var ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true, dateNF: 'mm-dd-yy' });
+    // Show long IDs in full (no 2.6551E+11)
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = 1; R <= range.e.r; R++) {
+      TX_FILE_COLS.forEach(function (c, C) {
+        var cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+        if (!cell) return;
+        if (c.id && cell.t === 'n') cell.z = '0';
+        if (c.date && cell.t === 'd') cell.z = 'mm-dd-yy';
+      });
+    }
+    ws['!cols'] = TX_FILE_COLS.map(function (c) { return { wch: c.w }; });
+    return ws;
+  }
+
+  function mdy(iso) { var m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '-' + m[3] + '-' + m[1] : iso; }
+
+  $('txExport').addEventListener('click', function () {
+    if (typeof XLSX === 'undefined') { $('txStatus').textContent = 'Export is unavailable right now. Reload the page and try again.'; return; }
+    var from = $('txFrom').value, to = $('txTo').value;
+    if (!from || !to) { $('txStatus').textContent = 'Choose a From and To date.'; return; }
+    var btn = $('txExport'); btn.disabled = true; btn.textContent = 'Preparing file...';
+    api('transactions', { from: from, to: to, direction: $('txDir').value, log: true }).then(function (d) {
+      if (!d.pallets.length) throw new Error('No receipts or shipments for ' + rangeText(d.from, d.to) + '.');
+      var wb = XLSX.utils.book_new();
+
+      // One tab per warehouse, ordered like the inventory view, rows by receipt then LWH ID
+      var groups = {}, order = [];
+      d.pallets.forEach(function (p) {
+        if (!groups[p.location_code]) { groups[p.location_code] = []; order.push(p); }
+        groups[p.location_code].push(p);
+      });
+      order.sort(function (a, b) { return (a.sort_order - b.sort_order) || (a.location_code < b.location_code ? -1 : 1); });
+      order.forEach(function (first) {
+        var rows = groups[first.location_code].slice().sort(function (a, b) {
+          return (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) ||
+                 (Number(a.inv_receipt) - Number(b.inv_receipt)) || (Number(a.lwh_id) - Number(b.lwh_id));
+        });
+        XLSX.utils.book_append_sheet(wb, txFileSheet(rows), tabName(first.tab_name + ' Transactions'));
+      });
+
+      // Extra: load summary on the last tab
+      if (d.loads.length) {
+        var plainLoads = TX_LOAD_COLS.map(function (c) { return Object.assign({}, c, { dir: false }); });
+        XLSX.utils.book_append_sheet(wb, toSheet(dirSheetRows(d.loads), plainLoads), 'Load Summary');
+      }
+
+      var name = 'One Source Transactions ' + (d.from === d.to ? mdy(d.from) : mdy(d.from) + ' to ' + mdy(d.to));
+      XLSX.writeFile(wb, name + '.xlsx');
+      $('txStatus').textContent = 'Downloaded ' + name + '.xlsx (' + fmt(d.pallets.length) + ' pallets).';
+    }).catch(function (err) { if (err.message !== 'SESSION_EXPIRED') $('txStatus').textContent = err.message; })
+      .then(function () { btn.disabled = false; btn.textContent = 'Export to Excel'; });
+  });
+
+  /* ---------- Bulk lookup ---------- */
+  var STATUS_CLS = { 'In inventory': 'st-in', 'Shipped': 'st-ship', 'Not in inventory': 'st-gone', 'Not found': 'st-none' };
+  var LK_COLS = [
+    { h: 'You Entered', k: 'input', w: 16 },
+    { h: 'Status', k: 'status', w: 16, statusCls: function (r) { return STATUS_CLS[r.status] || ''; } },
+    { h: 'Matched On', k: 'matched_on', w: 12 },
+    { h: 'Location', k: 'location', w: 26 },
+    { h: 'Bay', k: 'bay', w: 16 },
+    { h: 'Material Number', k: 'material_number', w: 16 },
+    { h: 'Module Description', k: 'module_description', w: 36, cls: 'desc' },
+    { h: 'LWH ID', k: 'lwh_id', w: 12 },
+    { h: 'Pallet ID', k: 'pallet_id', w: 16 },
+    { h: 'PGID', k: 'pgid', w: 15 },
+    { h: 'Bin Class', k: 'bin_class', w: 10 },
+    { h: 'PCS', k: 'pcs', w: 8, num: true },
+    { h: 'Date Received', k: 'date_received', w: 13, date: true },
+    { h: 'Note', k: 'note', w: 34 }
+  ];
+  var lk = null, lkFilter = null;
+
+  function lkIdsFromBox() {
+    return $('lkIds').value.split(/[\s,;]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+
+  $('lkGo').addEventListener('click', function () {
+    var ids = lkIdsFromBox();
+    if (!ids.length) { $('lkStatus').textContent = 'Paste at least one Pallet ID, PGID, or LWH ID.'; return; }
+    if (ids.length > 2000) { $('lkStatus').textContent = 'That is ' + fmt(ids.length) + ' IDs. Please look up 2,000 or fewer at a time.'; return; }
+    var btn = $('lkGo'); btn.disabled = true;
+    $('lkStatus').textContent = 'Looking up ' + fmt(ids.length) + ' IDs...';
+    $('lkStats').innerHTML = ''; $('lkTable').innerHTML = '';
+    api('lookup', { ids: ids }).then(function (d) {
+      lk = d; lkFilter = null;
+      $('lkStatus').textContent = '';
+      renderLookup();
+    }).catch(function (err) { $('lkStatus').textContent = ''; if (err.message !== 'SESSION_EXPIRED') $('lkStatus').textContent = err.message; })
+      .then(function () { btn.disabled = false; });
+  });
+  $('lkClear').addEventListener('click', function () {
+    $('lkIds').value = ''; lk = null; lkFilter = null;
+    $('lkStats').innerHTML = ''; $('lkTable').innerHTML = ''; $('lkStatus').textContent = '';
+    $('lkHint').classList.add('hidden'); $('lkIds').focus();
+  });
+
+  function renderLookup() {
+    var stats = $('lkStats'); stats.innerHTML = '';
+    var chip = function (label, n, key) {
+      var c = el('button', null, 'chip' + (lkFilter === key ? ' on' : ''));
+      c.type = 'button';
+      c.appendChild(document.createTextNode(label)); c.appendChild(el('b', fmt(n)));
+      c.disabled = !n && key !== null;
+      c.addEventListener('click', function () { lkFilter = lkFilter === key ? null : key; renderLookup(); });
+      stats.appendChild(c);
+    };
+    chip('All', lk.submitted, null);
+    chip('In inventory', lk.in_inventory, 'In inventory');
+    chip('Shipped', lk.shipped, 'Shipped');
+    if (lk.not_in_inventory) chip('No longer in inventory', lk.not_in_inventory, 'Not in inventory');
+    chip('Not found', lk.not_found, 'Not found');
+
+    var rows = lkFilter ? lk.rows.filter(function (r) { return r.status === lkFilter; }) : lk.rows;
+    $('lkHint').classList.toggle('hidden', !lk.rows.some(function (r) { return r.matched_on === 'PGID'; }));
+    drawTable($('lkTable'), LK_COLS, rows);
+  }
+
+  $('lkExport').addEventListener('click', function () {
+    if (!lk) { $('lkStatus').textContent = 'Run a lookup first, then export the results.'; return; }
+    if (typeof XLSX === 'undefined') { $('lkStatus').textContent = 'Export is unavailable right now. Reload the page and try again.'; return; }
+    var wb = XLSX.utils.book_new();
+    var cols = LK_COLS.map(function (c) { return Object.assign({}, c, { statusCls: null }); });
+    XLSX.utils.book_append_sheet(wb, toSheet(lk.rows, cols), 'Lookup Results');
+    var name = 'One Source Lookup ' + isoDate(new Date());
+    XLSX.writeFile(wb, name + '.xlsx');
+    $('lkStatus').textContent = 'Downloaded ' + name + '.xlsx (' + fmt(lk.rows.length) + ' rows).';
+  });
 
   /* ---------- Start ---------- */
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
