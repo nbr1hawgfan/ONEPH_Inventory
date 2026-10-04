@@ -226,6 +226,9 @@
       <label class="field">Type
         <select id="txDir"><option value="ALL">Receipts and shipments</option><option value="Inbound">Receipts only</option><option value="Outbound">Shipments only</option></select>
       </label>
+      <label class="field">Location
+        <select id="txLoc"><option value="ALL">All locations</option></select>
+      </label>
       <button id="txShow" class="primary" type="button">Show</button>
       <button id="txExport" class="secondary export" type="button">Export to Excel</button>
     </div>
@@ -265,7 +268,7 @@
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.2.0';
+  var APP_VERSION = 'v1.3.0';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -288,6 +291,7 @@
   var summary = null, chart = null;
   var $ = function (id) { return document.getElementById(id); };
   var fmt = function (n) { return Number(n || 0).toLocaleString('en-US'); };
+  var plural = function (n, word) { return fmt(n) + ' ' + word + (Number(n) === 1 ? '' : 's'); };
   $('ver').textContent = APP_VERSION;
 
   function el(tag, text, cls) {
@@ -665,6 +669,31 @@
   });
   $('txShow').addEventListener('click', loadTx);
   $('txDir').addEventListener('change', loadTx);
+  $('txLoc').addEventListener('change', function () { if (tx) { txReceipt = null; txPage = 1; renderTx(); } });
+
+  // Location filter runs in the page: no extra request, totals recalculated from what's shown.
+  function filterTx(d) {
+    var loc = $('txLoc').value;
+    var loads = loc === 'ALL' ? d.loads : d.loads.filter(function (l) { return l.location === loc; });
+    var pallets = loc === 'ALL' ? d.pallets : d.pallets.filter(function (p) { return p.location === loc; });
+    var t = { inbound_loads: 0, outbound_loads: 0, inbound_pallets: 0, outbound_pallets: 0, inbound_pieces: 0, outbound_pieces: 0 };
+    loads.forEach(function (l) { if (l.direction === 'Inbound') t.inbound_loads++; else if (l.direction === 'Outbound') t.outbound_loads++; });
+    pallets.forEach(function (p) {
+      var pcs = Number(p.pcs) || 0;
+      if (p.direction === 'Inbound') { t.inbound_pallets++; t.inbound_pieces += pcs; }
+      else if (p.direction === 'Outbound') { t.outbound_pallets++; t.outbound_pieces += pcs; }
+    });
+    return { from: d.from, to: d.to, totals: t, loads: loads, pallets: pallets };
+  }
+
+  function fillTxLocations(d) {
+    var sel = $('txLoc'), keep = sel.value, labels = [];
+    (summary ? summary.locations.map(function (l) { return l.label; }) : []).forEach(function (l) { if (labels.indexOf(l) === -1) labels.push(l); });
+    d.loads.concat(d.pallets).forEach(function (r) { if (r.location && labels.indexOf(r.location) === -1) labels.push(r.location); });
+    while (sel.options.length > 1) sel.remove(1);
+    labels.forEach(function (l) { sel.appendChild(new Option(l, l)); });
+    sel.value = labels.indexOf(keep) !== -1 ? keep : 'ALL';
+  }
 
   function rangeText(from, to) { return from === to ? usDate(from) : usDate(from) + ' to ' + usDate(to); }
 
@@ -676,6 +705,7 @@
     $('txPager').innerHTML = ''; $('txPalletInfo').textContent = '';
     api('transactions', { from: from, to: to, direction: $('txDir').value }).then(function (d) {
       tx = d; txReceipt = null; txPage = 1;
+      fillTxLocations(d);
       var capped = d.from !== (from < to ? from : to);
       $('txStatus').textContent = capped ? 'Ranges are limited to 93 days. Showing ' + rangeText(d.from, d.to) + '.' : '';
       renderTx();
@@ -718,13 +748,14 @@
   }
 
   function renderTx() {
-    var d = tx, t = d.totals, dir = $('txDir').value;
+    var d = filterTx(tx), t = d.totals, dir = $('txDir').value;
+    var locText = $('txLoc').value === 'ALL' ? '' : ' at ' + $('txLoc').value;
     var box = $('txTotals'); box.innerHTML = ''; box.classList.remove('hidden');
     var card = function (cls, label, loads, pallets, pieces) {
       var c = el('div', null, cls);
-      c.appendChild(el('div', label + ', ' + rangeText(d.from, d.to), 'label'));
-      c.appendChild(el('div', fmt(pallets) + ' pallets', 'big'));
-      c.appendChild(el('div', fmt(loads) + ' loads, ' + fmt(pieces) + ' pieces', 'small'));
+      c.appendChild(el('div', label + locText + ', ' + rangeText(d.from, d.to), 'label'));
+      c.appendChild(el('div', plural(pallets, 'pallet'), 'big'));
+      c.appendChild(el('div', plural(loads, 'load') + ', ' + plural(pieces, 'piece'), 'small'));
       box.appendChild(c);
     };
     if (dir !== 'Outbound') card('in', 'Received', t.inbound_loads, t.inbound_pallets, t.inbound_pieces);
@@ -743,7 +774,7 @@
       $('txLoads').innerHTML = '';
     }
     if (!d.pallets.length && !hasLoads) {
-      $('txPalletInfo').textContent = 'No receipts or shipments for ' + rangeText(d.from, d.to) + '.';
+      $('txPalletInfo').textContent = 'No receipts or shipments' + locText + ' for ' + rangeText(d.from, d.to) + '.';
       $('txPallets').innerHTML = ''; $('txPager').innerHTML = '';
       return;
     }
@@ -751,12 +782,13 @@
   }
 
   function renderTxPallets() {
-    var rows = txReceipt ? tx.pallets.filter(function (p) { return p.inv_receipt === txReceipt; }) : tx.pallets;
+    var view = filterTx(tx).pallets;
+    var rows = txReceipt ? view.filter(function (p) { return p.inv_receipt === txReceipt; }) : view;
     var size = 100, pages = Math.max(1, Math.ceil(rows.length / size));
     txPage = Math.min(Math.max(1, txPage), pages);
     var pcs = 0; rows.forEach(function (r) { pcs += Number(r.pcs) || 0; });
     $('txPalletInfo').textContent = fmt(rows.length) + ' pallets, ' + fmt(pcs) + ' pieces' +
-      (txReceipt ? ' on INV Receipt ' + txReceipt + '.' : '.');
+      (txReceipt ? ' on INV Receipt ' + txReceipt + '.' : ($('txLoc').value === 'ALL' ? '.' : ' at ' + $('txLoc').value + '.'));
     drawTable($('txPallets'), TX_PALLET_COLS, rows.slice((txPage - 1) * size, txPage * size));
     var pg = $('txPager'); pg.innerHTML = '';
     if (pages > 1) {
@@ -836,8 +868,10 @@
     var from = $('txFrom').value, to = $('txTo').value;
     if (!from || !to) { $('txStatus').textContent = 'Choose a From and To date.'; return; }
     var btn = $('txExport'); btn.disabled = true; btn.textContent = 'Preparing file...';
-    api('transactions', { from: from, to: to, direction: $('txDir').value, log: true }).then(function (d) {
-      if (!d.pallets.length) throw new Error('No receipts or shipments for ' + rangeText(d.from, d.to) + '.');
+    var locSel = $('txLoc').value;
+    api('transactions', { from: from, to: to, direction: $('txDir').value, location: locSel, log: true }).then(function (full) {
+      var d = filterTx(full);
+      if (!d.pallets.length) throw new Error('No receipts or shipments' + (locSel === 'ALL' ? '' : ' at ' + locSel) + ' for ' + rangeText(d.from, d.to) + '.');
       var wb = XLSX.utils.book_new();
 
       // One tab per warehouse, ordered like the inventory view, rows by receipt then LWH ID
@@ -861,7 +895,8 @@
         XLSX.utils.book_append_sheet(wb, toSheet(dirSheetRows(d.loads), plainLoads), 'Load Summary');
       }
 
-      var name = 'One Source Transactions ' + (d.from === d.to ? mdy(d.from) : mdy(d.from) + ' to ' + mdy(d.to));
+      var name = 'One Source ' + (locSel === 'ALL' ? '' : d.pallets[0].tab_name + ' ') + 'Transactions ' +
+        (d.from === d.to ? mdy(d.from) : mdy(d.from) + ' to ' + mdy(d.to));
       XLSX.writeFile(wb, name + '.xlsx');
       $('txStatus').textContent = 'Downloaded ' + name + '.xlsx (' + fmt(d.pallets.length) + ' pallets).';
     }).catch(function (err) { if (err.message !== 'SESSION_EXPIRED') $('txStatus').textContent = err.message; })

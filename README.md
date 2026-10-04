@@ -52,7 +52,8 @@ The Transactions export matches the daily file LWH used to email One Source:
   Transaction Date
 - IDs stored as whole numbers and dates formatted mm-dd-yy, as in the WMS file
 - rows sorted by receipt
-A "Load Summary" tab is added at the end. Tab names come from `oneph_app_locations.short_name`.
+A "Load Summary" tab is added at the end. The Location filter (v1.3.0) narrows the screen, the totals,
+and the export to one warehouse. Tab names come from `oneph_app_locations.short_name`.
 
 ## Excel export
 The workbook is built in the browser with SheetJS. IDs stay as text, so Excel won't convert them
