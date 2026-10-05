@@ -245,7 +245,7 @@
     <div id="txTotals" class="totals hidden"></div>
 
     <h3 id="txLoadsHead" class="hidden">Loads</h3>
-    <div class="hint hidden" id="txLoadsHint" style="margin:-4px 0 10px 0;">Select a load to show only its pallets below. Select it again to show all.</div>
+    <div class="hint hidden" id="txLoadsHint" style="margin:-4px 0 10px 0;">Select a load to show only its pallets below. Select it again to show all. Loads marked Open are still being received or loaded; carrier and trailer details fill in once the load is closed out.</div>
     <div class="scroll"><table id="txLoads" class="results"></table></div>
 
     <h3 id="txPalletsHead" class="hidden">Pallets</h3>
@@ -313,7 +313,7 @@
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.5.0';
+  var APP_VERSION = 'v1.5.1';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -741,8 +741,12 @@
     var loc = $('txLoc').value;
     var loads = loc === 'ALL' ? d.loads : d.loads.filter(function (l) { return l.location === loc; });
     var pallets = loc === 'ALL' ? d.pallets : d.pallets.filter(function (p) { return p.location === loc; });
-    var t = { inbound_loads: 0, outbound_loads: 0, inbound_pallets: 0, outbound_pallets: 0, inbound_pieces: 0, outbound_pieces: 0 };
-    loads.forEach(function (l) { if (l.direction === 'Inbound') t.inbound_loads++; else if (l.direction === 'Outbound') t.outbound_loads++; });
+    var t = { inbound_loads: 0, outbound_loads: 0, inbound_open: 0, outbound_open: 0, inbound_pallets: 0, outbound_pallets: 0, inbound_pieces: 0, outbound_pieces: 0 };
+    loads.forEach(function (l) {
+      var open = l.status === 'Open';
+      if (l.direction === 'Inbound') { t.inbound_loads++; if (open) t.inbound_open++; }
+      else if (l.direction === 'Outbound') { t.outbound_loads++; if (open) t.outbound_open++; }
+    });
     pallets.forEach(function (p) {
       var pcs = Number(p.pcs) || 0;
       if (p.direction === 'Inbound') { t.inbound_pallets++; t.inbound_pieces += pcs; }
@@ -816,15 +820,15 @@
     var d = filterTx(tx), t = d.totals, dir = $('txDir').value;
     var locText = $('txLoc').value === 'ALL' ? '' : ' at ' + $('txLoc').value;
     var box = $('txTotals'); box.innerHTML = ''; box.classList.remove('hidden');
-    var card = function (cls, label, loads, pallets, pieces) {
+    var card = function (cls, label, loads, pallets, pieces, open) {
       var c = el('div', null, cls);
       c.appendChild(el('div', label + locText + ', ' + rangeText(d.from, d.to), 'label'));
       c.appendChild(el('div', plural(pallets, 'pallet'), 'big'));
-      c.appendChild(el('div', plural(loads, 'load') + ', ' + plural(pieces, 'piece'), 'small'));
+      c.appendChild(el('div', plural(loads, 'load') + (open ? ' (' + fmt(open) + ' still open)' : '') + ', ' + plural(pieces, 'piece'), 'small'));
       box.appendChild(c);
     };
-    if (dir !== 'Outbound') card('in', 'Received', t.inbound_loads, t.inbound_pallets, t.inbound_pieces);
-    if (dir !== 'Inbound') card('out', 'Shipped', t.outbound_loads, t.outbound_pallets, t.outbound_pieces);
+    if (dir !== 'Outbound') card('in', 'Received', t.inbound_loads, t.inbound_pallets, t.inbound_pieces, t.inbound_open);
+    if (dir !== 'Inbound') card('out', 'Shipped', t.outbound_loads, t.outbound_pallets, t.outbound_pieces, t.outbound_open);
 
     var hasLoads = d.loads.length > 0;
     $('txLoadsHead').classList.toggle('hidden', !hasLoads);
