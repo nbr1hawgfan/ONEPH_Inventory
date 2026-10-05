@@ -181,6 +181,7 @@
   <button class="tab" role="tab" data-tab="inventory" aria-selected="true">Inventory</button>
   <button class="tab" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
   <button class="tab" role="tab" data-tab="lookup" aria-selected="false">Bulk Lookup</button>
+  <button class="tab" role="tab" data-tab="carriers" aria-selected="false">Carriers</button>
   <div id="quickLinks" class="quick-links" aria-label="Quick links"></div>
 </nav>
 
@@ -271,12 +272,48 @@
     <div class="scroll results-scroll"><table id="lkTable" class="results"></table></div>
   </section>
  </div>
+
+ <!-- Carriers -->
+ <div id="panel-carriers" class="panel hidden">
+  <section>
+    <h2>Carrier activity</h2>
+    <div class="quick" id="crQuick">
+      <button class="chip" type="button" data-range="last30">Last 30 days</button>
+      <button class="chip" type="button" data-range="last90">Last 90 days</button>
+      <button class="chip" type="button" data-range="month">This month</button>
+      <button class="chip" type="button" data-range="lastmonth">Last month</button>
+      <button class="chip" type="button" data-range="all">All available</button>
+    </div>
+    <div class="controls">
+      <label class="field">From<input id="crFrom" type="date"></label>
+      <label class="field">To<input id="crTo" type="date"></label>
+      <label class="field">Type
+        <select id="crDir"><option value="ALL">Receipts and shipments</option><option value="Inbound">Receipts only</option><option value="Outbound">Shipments only</option></select>
+      </label>
+      <label class="field">Location
+        <select id="crLoc"><option value="ALL">All locations</option></select>
+      </label>
+      <button id="crShow" class="primary" type="button">Show</button>
+      <button id="crExport" class="secondary export" type="button">Export to Excel</button>
+    </div>
+    <div id="crStatus" class="status" role="status"></div>
+    <div id="crTotals" class="totals hidden"></div>
+    <div id="crChartWrap" class="chart-wrap hidden"><canvas id="crChart" aria-label="Loads by carrier"></canvas></div>
+
+    <h3 id="crTableHead" class="hidden">All carriers</h3>
+    <div class="hint hidden" id="crHint" style="margin:-4px 0 10px 0;">Carrier names are entered by hand, so different spellings of the same company are combined. Select a carrier to see its loads.</div>
+    <div class="scroll"><table id="crTable" class="results"></table></div>
+
+    <h3 id="crLoadsHead" class="hidden"></h3>
+    <div class="scroll results-scroll"><table id="crLoads" class="results"></table></div>
+  </section>
+ </div>
 </main>
 
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.4.0';
+  var APP_VERSION = 'v1.5.0';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -633,12 +670,13 @@
   /* ---------- Tabs ---------- */
   var loadedTabs = {};
   function showTab(name) {
-    if (['inventory', 'transactions', 'lookup'].indexOf(name) === -1) name = 'inventory';
+    if (['inventory', 'transactions', 'lookup', 'carriers'].indexOf(name) === -1) name = 'inventory';
     document.querySelectorAll('.tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.tab === name)); });
     document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('hidden', p.id !== 'panel-' + name); });
     if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
     if (name === 'transactions' && !loadedTabs.transactions) { loadedTabs.transactions = true; setRange('prevbiz'); loadTx(); }
     if (name === 'lookup') setTimeout(function () { $('lkIds').focus(); }, 0);
+    if (name === 'carriers' && !loadedTabs.carriers) { loadedTabs.carriers = true; setCrRange('last30'); fillCrLocations(); loadCarriers(); }
   }
   document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { showTab(t.dataset.tab); }); });
 
@@ -1004,6 +1042,191 @@
     var name = 'One Source Lookup ' + isoDate(new Date());
     XLSX.writeFile(wb, name + '.xlsx');
     $('lkStatus').textContent = 'Downloaded ' + name + '.xlsx (' + fmt(lk.rows.length) + ' rows).';
+  });
+
+  /* ---------- Carriers ---------- */
+  var CR_COLS = [
+    { h: 'Rank', k: 'rank', w: 6, num: true },
+    { h: 'Carrier', k: 'carrier', w: 34, cls: 'wrap' },
+    { h: 'Loads', k: 'loads', w: 8, num: true },
+    { h: 'Share of Loads', k: 'share_text', w: 14, r: true },
+    { h: 'Pallets', k: 'pallets', w: 9, num: true },
+    { h: 'Pieces', k: 'pieces', w: 10, num: true },
+    { h: 'Avg Pallets / Load', k: 'avg_pallets', w: 16, dec: true },
+    { h: 'Receipts', k: 'inbound_loads', w: 9, num: true },
+    { h: 'Shipments', k: 'outbound_loads', w: 10, num: true },
+    { h: 'First Load', k: 'first_load', w: 12, date: true },
+    { h: 'Last Load', k: 'last_load', w: 12, date: true },
+    { h: 'Names Entered', k: 'spelling_count', w: 13, num: true }
+  ];
+  var CR_LOAD_COLS = [
+    { h: 'Carrier', k: 'carrier', w: 34 },
+    { h: 'Date', k: 'date', w: 12, date: true },
+    { h: 'Type', k: 'direction', w: 10, dir: true },
+    { h: 'Location', k: 'location', w: 26 },
+    { h: 'INV Receipt', k: 'inv_receipt', w: 12 },
+    { h: 'Bill-To Reference', k: 'bill_to_ref', w: 18 },
+    { h: 'Pallets', k: 'pallets', w: 9, num: true },
+    { h: 'Pieces', k: 'pieces', w: 10, num: true },
+    { h: 'Trailer', k: 'trailer', w: 12 },
+    { h: 'Shipper', k: 'shipper', w: 30, cls: 'wrap' },
+    { h: 'Carrier as Entered', k: 'carrier_as_entered', w: 34, cls: 'wrap' }
+  ];
+  var cr = null, crPick = null, crChart = null;
+
+  function setCrRange(kind) {
+    var now = new Date(), f = new Date(now), t = new Date(now);
+    if (kind === 'last30') f.setDate(f.getDate() - 29);
+    else if (kind === 'last90') f.setDate(f.getDate() - 89);
+    else if (kind === 'month') f = new Date(now.getFullYear(), now.getMonth(), 1);
+    else if (kind === 'lastmonth') { f = new Date(now.getFullYear(), now.getMonth() - 1, 1); t = new Date(now.getFullYear(), now.getMonth(), 0); }
+    else if (kind === 'all') f = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    $('crFrom').value = isoDate(f); $('crTo').value = isoDate(t);
+    document.querySelectorAll('#crQuick .chip').forEach(function (c) { c.classList.toggle('on', c.dataset.range === kind); });
+  }
+  function fillCrLocations() {
+    var sel = $('crLoc');
+    while (sel.options.length > 1) sel.remove(1);
+    (summary ? summary.locations : []).forEach(function (l) { sel.appendChild(new Option(l.label, l.code)); });
+  }
+  document.querySelectorAll('#crQuick .chip').forEach(function (c) {
+    c.addEventListener('click', function () { setCrRange(c.dataset.range); loadCarriers(); });
+  });
+  ['crFrom', 'crTo'].forEach(function (id) {
+    $(id).addEventListener('change', function () { document.querySelectorAll('#crQuick .chip').forEach(function (c) { c.classList.remove('on'); }); });
+  });
+  $('crShow').addEventListener('click', loadCarriers);
+  $('crDir').addEventListener('change', loadCarriers);
+  $('crLoc').addEventListener('change', loadCarriers);
+
+  function crParams(log) {
+    return { from: $('crFrom').value, to: $('crTo').value, direction: $('crDir').value, location: $('crLoc').value, log: !!log };
+  }
+  function prepCarriers(d) {
+    d.carriers.forEach(function (c, i) {
+      c.rank = i + 1;
+      c.share_text = (c.share == null ? 0 : c.share).toFixed(1) + '%';
+      c.spelling_count = (c.spellings || []).length;
+    });
+    return d;
+  }
+
+  function loadCarriers() {
+    if (!$('crFrom').value || !$('crTo').value) { $('crStatus').textContent = 'Choose a From and To date.'; return; }
+    $('crStatus').textContent = 'Loading carrier activity...';
+    $('crTable').innerHTML = ''; $('crLoads').innerHTML = ''; $('crLoadsHead').classList.add('hidden');
+    api('carriers', crParams(false)).then(function (d) {
+      cr = prepCarriers(d); crPick = null;
+      var note = d.data_starts && d.from < d.data_starts ? 'Load history for One Source begins ' + usDate(d.data_starts) + '.' : '';
+      $('crStatus').textContent = note;
+      renderCarriers();
+    }).catch(function (err) { if (err.message !== 'SESSION_EXPIRED') $('crStatus').textContent = err.message; });
+  }
+
+  function crCell(c, row) {
+    var v = row[c.k];
+    if (c.dec) return v == null ? '' : Number(v).toFixed(1);
+    return cellFor(c, row);
+  }
+
+  function renderCarriers() {
+    var d = cr, t = d.totals || {};
+    var box = $('crTotals'); box.innerHTML = ''; box.classList.remove('hidden');
+    var scope = rangeText(d.from, d.to) + ($('crLoc').value === 'ALL' ? '' : ', ' + $('crLoc').options[$('crLoc').selectedIndex].text);
+    [['in', 'Carriers', plural(t.carriers, 'carrier'), scope],
+     ['out', 'Loads', plural(t.loads, 'load'), plural(t.pallets, 'pallet') + ', ' + plural(t.pieces, 'piece')]].forEach(function (x) {
+      var c = el('div', null, x[0]);
+      c.appendChild(el('div', x[1], 'label')); c.appendChild(el('div', x[2], 'big')); c.appendChild(el('div', x[3], 'small'));
+      box.appendChild(c);
+    });
+
+    var has = d.carriers.length > 0;
+    ['crTableHead', 'crHint', 'crChartWrap'].forEach(function (id) { $(id).classList.toggle('hidden', !has); });
+    if (!has) { $('crTable').innerHTML = ''; $('crStatus').textContent = 'No loads for ' + scope + '.'; return; }
+
+    // Top 15 chart
+    if (typeof Chart !== 'undefined') {
+      var top = d.carriers.slice(0, 15);
+      $('crChartWrap').style.height = Math.max(200, top.length * 34 + 60) + 'px';
+      if (crChart) crChart.destroy();
+      crChart = new Chart($('crChart'), {
+        type: 'bar',
+        data: { labels: top.map(function (c) { return c.carrier; }),
+                datasets: [{ label: 'Loads', data: top.map(function (c) { return c.loads; }),
+                             backgroundColor: top.map(function (c) { return c.key === crPick ? '#1A1A1A' : '#C41230'; }), borderWidth: 0 }] },
+        options: {
+          indexAxis: 'y', maintainAspectRatio: false, animation: false,
+          plugins: { legend: { display: false }, title: { display: true, text: 'Top carriers by loads', font: { size: 16 } },
+            tooltip: { callbacks: { label: function (c) { var x = top[c.dataIndex]; return fmt(x.loads) + ' loads, ' + fmt(x.pallets) + ' pallets (' + x.share_text + ')'; } } } },
+          scales: { x: { ticks: { font: { size: 14 }, precision: 0 } }, y: { ticks: { font: { size: 14 } } } },
+          onClick: function (evt, els) { if (els.length) pickCarrier(top[els[0].index].key); }
+        }
+      });
+    }
+
+    var table = $('crTable');
+    drawTable(table, CR_COLS, d.carriers, function (row) { pickCarrier(row.key); }, function (row) { return row.key === crPick; });
+    // decimals, right-align share, and spelling tooltips
+    var trs = table.querySelectorAll('tbody tr');
+    d.carriers.forEach(function (row, i) {
+      var tds = trs[i].children;
+      CR_COLS.forEach(function (c, j) {
+        if (c.dec) { tds[j].textContent = crCell(c, row); tds[j].className = 'r'; }
+        if (c.r) tds[j].className = 'r';
+        if (c.k === 'spelling_count' && row.spellings && row.spellings.length > 1) tds[j].title = row.spellings.join('\n');
+      });
+    });
+    renderCrLoads();
+  }
+
+  function pickCarrier(key) {
+    crPick = crPick === key ? null : key;
+    renderCarriers();
+    if (crPick) $('crLoadsHead').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function renderCrLoads() {
+    if (!crPick) { $('crLoadsHead').classList.add('hidden'); $('crLoads').innerHTML = ''; return; }
+    var c = cr.carriers.filter(function (x) { return x.key === crPick; })[0];
+    var rows = cr.loads.filter(function (l) { return l.key === crPick; });
+    var head = $('crLoadsHead');
+    head.textContent = c.carrier + ': ' + plural(rows.length, 'load') + ' (' + c.share_text + ' of loads)';
+    head.classList.remove('hidden');
+    drawTable($('crLoads'), CR_LOAD_COLS.slice(1), rows);
+  }
+
+  $('crExport').addEventListener('click', function () {
+    if (typeof XLSX === 'undefined') { $('crStatus').textContent = 'Export is unavailable right now. Reload the page and try again.'; return; }
+    var btn = $('crExport'); btn.disabled = true; btn.textContent = 'Preparing file...';
+    api('carriers', crParams(true)).then(function (d) {
+      prepCarriers(d);
+      if (!d.carriers.length) throw new Error('No loads for that range.');
+      var wb = XLSX.utils.book_new();
+      var sumRows = d.carriers.map(function (c) {
+        return Object.assign({}, c, { share_pct: Number(c.share) / 100, avg: Number(c.avg_pallets), spellings_text: (c.spellings || []).join('; ') });
+      });
+      var sumCols = [
+        { h: 'Rank', k: 'rank', w: 6, num: true }, { h: 'Carrier', k: 'carrier', w: 34 },
+        { h: 'Loads', k: 'loads', w: 8, num: true }, { h: 'Share of Loads', k: 'share_pct', w: 14, num: true },
+        { h: 'Pallets', k: 'pallets', w: 9, num: true }, { h: 'Pieces', k: 'pieces', w: 10, num: true },
+        { h: 'Avg Pallets / Load', k: 'avg', w: 16, num: true },
+        { h: 'Receipts', k: 'inbound_loads', w: 9, num: true }, { h: 'Shipments', k: 'outbound_loads', w: 10, num: true },
+        { h: 'First Load', k: 'first_load', w: 12, date: true }, { h: 'Last Load', k: 'last_load', w: 12, date: true },
+        { h: 'Names Entered', k: 'spellings_text', w: 60 }
+      ];
+      var ws1 = toSheet(sumRows, sumCols);
+      for (var R = 1; R <= sumRows.length; R++) {
+        var sc = ws1[XLSX.utils.encode_cell({ r: R, c: 3 })]; if (sc) sc.z = '0.0%';
+        var av = ws1[XLSX.utils.encode_cell({ r: R, c: 6 })]; if (av) av.z = '0.0';
+      }
+      XLSX.utils.book_append_sheet(wb, ws1, 'Carrier Summary');
+      var loadCols = CR_LOAD_COLS.map(function (c) { return Object.assign({}, c, { dir: false }); });
+      XLSX.utils.book_append_sheet(wb, toSheet(dirSheetRows(d.loads), loadCols), 'Loads by Carrier');
+      var name = 'One Source Carrier Activity ' + (d.from === d.to ? mdy(d.from) : mdy(d.from) + ' to ' + mdy(d.to));
+      XLSX.writeFile(wb, name + '.xlsx');
+      $('crStatus').textContent = 'Downloaded ' + name + '.xlsx.';
+    }).catch(function (err) { if (err.message !== 'SESSION_EXPIRED') $('crStatus').textContent = err.message; })
+      .then(function () { btn.disabled = false; btn.textContent = 'Export to Excel'; });
   });
 
   /* ---------- Start ---------- */

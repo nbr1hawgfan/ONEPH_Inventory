@@ -61,6 +61,21 @@ the tabs and open in a new tab. The URLs live in Supabase table `oneph_app_links
 after a valid PIN, so they aren't exposed in this public repo. To add, change, or hide a link, edit that
 table (label, url, hint, sort_order, active). No app update is needed.
 
+## Carriers tab (v1.5.0)
+Loads, pallets, pieces, share of loads, average pallets per load, receipts and shipments, and first and
+last load for each carrier, over any date range (about 6 months of history), with Type and Location
+filters. It includes a top-15 chart, click-through to a carrier's loads, and an Excel export with
+"Carrier Summary" and "Loads by Carrier" tabs.
+
+Carrier names are typed by hand, so spellings are combined automatically. Punctuation and
+INC/LLC/CORP-style suffixes are ignored ("CASPER BROTHERS, INC." = "CASPER BROTHERS").
+For typos and short forms, add a row to `oneph_app_carrier_aliases`:
+
+    insert into oneph_app_carrier_aliases (variant_key, canonical_key, note)
+    values (oneph_carrier_key('DTR EXPRESS INC'), oneph_carrier_key('DTX EXPRESS INC'), 'typo');
+
+The change shows up immediately with no app update. The displayed name is the most-used spelling.
+
 ## Excel export
 The workbook is built in the browser with SheetJS. IDs stay as text, so Excel won't convert them
 to scientific notation. Each export gets one tab per location plus autofilters. The free SheetJS
