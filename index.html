@@ -128,6 +128,25 @@
   .st-gone { font-weight: 600; color: #8A5A00; }
   .st-none { font-weight: 700; color: var(--red-dark); }
 
+  /* What-if planner */
+  .planner { border: 1px solid var(--line); border-left: 6px solid var(--red); border-radius: 4px; padding: 16px 18px 18px; margin-bottom: 18px; }
+  .planner .controls { margin-bottom: 6px; }
+  .planner .field input, .planner .field select { width: 150px; }
+  .planner .field select { width: 190px; }
+  .planner .field .calc { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+  .plan-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 4px; margin: 14px 0 6px; }
+  .plan-out > div { padding: 12px 16px; border-left: 6px solid var(--black); }
+  .plan-out > div.now { border-left-color: #BDBDBD; }
+  .plan-out .label { font-size: 15px; color: var(--muted); }
+  .plan-out .big { font-family: 'Barlow Semi Condensed', 'Arial Narrow', Arial, sans-serif; font-size: 30px; font-weight: 700; color: var(--black); line-height: 1.15; }
+  .plan-out .small { font-size: 16px; }
+  .faster { color: var(--red-dark); font-weight: 600; }
+  tr.mine td { background: #FBEFF1 !important; font-weight: 700; }
+
+  @media (max-width: 760px) {
+    .planner .field, .planner .field input, .planner .field select { width: 100%; }
+  }
+
   /* Analytics */
   .cap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; margin-bottom: 26px; }
   .cap { border: 1px solid var(--line); border-top: 6px solid var(--black); border-radius: 4px; padding: 14px 18px 16px; }
@@ -349,6 +368,24 @@
     <h3 id="anChartHead" class="hidden">Estimated fill level by day</h3>
     <div id="anChartWrap" class="chart-wrap hidden" style="height:340px;"><canvas id="anChart" aria-label="Percent of capacity by day for each location"></canvas></div>
     <div class="hint hidden" id="anChartHint">Worked back from today's inventory using the receipts and shipments for each day. Inventory adjustments outside of loads aren't included, so earlier days are estimates.</div>
+
+    <h3 id="plHead" class="hidden">What if? Fill planner</h3>
+    <div id="plBox" class="planner hidden">
+      <p class="asof" style="margin:0 0 12px 0;">Pick a building and change the numbers to see how fast it would fill. Each one starts at that building's current pace. Nothing here changes any data.</p>
+      <div class="controls">
+        <label class="field">Building<select id="plLoc"></select></label>
+        <label class="field">Inbound loads / day<input id="plLoads" type="number" min="0" step="0.5" inputmode="decimal"><span class="calc" id="plLoadsNote"></span></label>
+        <label class="field">Pallets per load<input id="plPpl" type="number" min="1" step="1" inputmode="numeric"><span class="calc">Typical truckload is 16</span></label>
+        <label class="field">Pallets in / day<input id="plIn" type="number" min="0" step="1" inputmode="decimal"><span class="calc">Or type it directly</span></label>
+        <label class="field">Pallets shipped / day<input id="plOut" type="number" min="0" step="1" inputmode="decimal"><span class="calc" id="plOutNote"></span></label>
+        <label class="field">Starting pallets<input id="plStart" type="number" min="0" step="1" inputmode="numeric"><span class="calc" id="plStartNote"></span></label>
+        <label class="field">Max pallets<input id="plMax" type="number" min="1" step="1" inputmode="numeric"><span class="calc" id="plMaxNote"></span></label>
+        <button id="plReset" class="secondary" type="button">Reset to current pace</button>
+      </div>
+      <div id="plOut2" class="plan-out"></div>
+      <div class="scroll"><table id="plTable" class="results"></table></div>
+      <div class="hint">Working days only (Monday to Friday). Rows show the same pallets per load and pallets shipped, with a different number of inbound loads a day.</div>
+    </div>
   </section>
  </div>
 </main>
@@ -356,7 +393,7 @@
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.6.0';
+  var APP_VERSION = 'v1.7.0';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -1478,6 +1515,8 @@
     t.appendChild(tb);
     ['anAvgHead', 'anHint'].forEach(function (id) { $(id).classList.remove('hidden'); });
 
+    setupPlanner();
+
     // Fill level chart (percent of capacity so warehouses of different sizes compare fairly)
     var plotted = a.rows.filter(function (r) { return r.max && (r.hasActivity || r.onHand); });
     var showChart = plotted.length && typeof Chart !== 'undefined';
@@ -1512,6 +1551,121 @@
       }
     });
   }
+
+  /* ---------- What-if fill planner ---------- */
+  var PALLETS_PER_LOAD = 16;
+  var plRow = null, plTouched = false;   // until someone edits a box, use the exact current pace (inputs show it rounded)
+
+  function plNum(id) { var v = parseFloat($(id).value); return isFinite(v) && v >= 0 ? v : 0; }
+  function plFill(id, v) { $(id).value = Math.round(v * 10) / 10; }
+
+  function setupPlanner() {
+    var rows = an.rows.filter(function (r) { return r.max; });
+    var show = rows.length > 0;
+    ['plHead', 'plBox'].forEach(function (id) { $(id).classList.toggle('hidden', !show); });
+    if (!show) return;
+    var sel = $('plLoc'), keep = sel.value;
+    sel.innerHTML = '';
+    rows.forEach(function (r) { sel.appendChild(new Option(r.name, r.name)); });
+    sel.value = rows.some(function (r) { return r.name === keep; }) ? keep : rows[0].name;
+    if (!$('plPpl').value) $('plPpl').value = PALLETS_PER_LOAD;
+    plReset();
+  }
+
+  function plReset() {
+    plRow = an.rows.filter(function (r) { return r.name === $('plLoc').value; })[0];
+    if (!plRow) return;
+    var ppl = plNum('plPpl') || PALLETS_PER_LOAD;
+    plFill('plIn', plRow.inPalDay);
+    plFill('plLoads', plRow.inPalDay / ppl);
+    plFill('plOut', plRow.outPalDay);
+    $('plStart').value = plRow.onHand;
+    $('plMax').value = plRow.max;
+    $('plLoadsNote').textContent = 'Now ' + fmt1(plRow.inLoadsDay) + ' loads, ' + fmt1(plRow.inPalDay / Math.max(plRow.inLoadsDay, 0.0001) || 0) + ' pallets each';
+    if (!plRow.inLoadsDay) $('plLoadsNote').textContent = 'No receipts yet';
+    $('plOutNote').textContent = 'Now ' + fmt1(plRow.outPalDay) + ' a day';
+    $('plStartNote').textContent = 'On hand now: ' + fmt(plRow.onHand);
+    $('plMaxNote').textContent = 'Set max: ' + fmt(plRow.max);
+    plTouched = false;
+    plCalc();
+  }
+
+  // days to full for a given in/out rate; null if it never fills
+  function plDays(start, max, inDay, outDay) {
+    var net = inDay - outDay, open = max - start;
+    if (open <= 0) return 0;
+    if (net <= 0.05) return null;
+    return open / net;
+  }
+
+  function plCalc() {
+    if (!plRow) return;
+    var inDay = plNum('plIn'), outDay = plNum('plOut'), start = plNum('plStart'), max = plNum('plMax') || plRow.max;
+    var ppl = plNum('plPpl') || PALLETS_PER_LOAD;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    if (!plTouched) { inDay = plRow.inPalDay; outDay = plRow.outPalDay; }
+    var days = plDays(start, max, inDay, outDay);
+    var nowDays = plDays(plRow.onHand, plRow.max, plRow.inPalDay, plRow.outPalDay);
+
+    var box = $('plOut2'); box.innerHTML = '';
+    function card(cls, label, big, small) {
+      var c = el('div', null, cls);
+      c.appendChild(el('div', label, 'label')); c.appendChild(el('div', big, 'big'));
+      if (small) { var sm = el('div', null, 'small'); if (small.nodeType) sm.appendChild(small); else sm.textContent = small; c.appendChild(sm); }
+      box.appendChild(c);
+    }
+    function daysText(d) { return d === null ? 'Never fills' : d === 0 ? 'Already full' : d > 260 ? 'Over a year' : (d < 1 ? 'Under 1' : fmt(Math.ceil(d))) + ' working days'; }
+    function dateText(d) { return d === null ? 'Shipping keeps up with receiving' : d === 0 ? '' : d > 260 ? 'About ' + fmt(Math.ceil(d)) + ' working days' : 'Full around ' + niceDate(addWorkingDays(today, Math.ceil(d))); }
+
+    var net = inDay - outDay;
+    card('', 'With these numbers', daysText(days), dateText(days));
+    card('', 'Net pallets / day', (net > 0 ? '+' : '') + fmt1(net), fmt1(inDay) + ' in (' + fmt1(inDay / ppl) + ' loads of ' + fmt(ppl) + ') minus ' + fmt1(outDay) + ' out');
+    var cmp = '';
+    if (plRow.state === 'new') cmp = 'No receipts here yet';
+    else if (nowDays === null) cmp = 'Not filling at the current pace';
+    else if (days !== null && days > 0) {
+      var diff = Math.round(nowDays - days);
+      if (Math.abs(diff) <= Math.max(1, nowDays * 0.03)) cmp = 'Same as current pace';
+      else if (nowDays > 260 || days > 260) cmp = el('span', diff > 0 ? 'Faster than current pace' : 'Slower than current pace', diff > 0 ? 'faster' : '');
+      else cmp = el('span', fmt(Math.abs(diff)) + ' working days ' + (diff > 0 ? 'sooner' : 'later') + ' than current pace', diff > 0 ? 'faster' : '');
+    }
+    card('now', 'At current pace', plRow.state === 'new' ? 'Not started' : daysText(nowDays), cmp);
+
+    // Scenario table: same pallets per load and shipping, different inbound loads a day
+    var center = Math.max(1, Math.round(inDay / ppl));
+    var lo = Math.max(1, center - 3), hi = lo + 7;
+    var t = $('plTable'); t.innerHTML = '';
+    var cols = ['Inbound Loads / Day', 'Pallets In / Day', 'Net Pallets / Day', 'Working Days to Full', 'Est. Full Date'];
+    var hr = el('tr'); cols.forEach(function (h, i) { hr.appendChild(el('th', h, i ? 'r' : '')); });
+    var thead = el('thead'); thead.appendChild(hr); t.appendChild(thead);
+    var tb = el('tbody');
+    for (var n = lo; n <= hi; n++) {
+      var pin = n * ppl, d = plDays(start, max, pin, outDay);
+      var tr = el('tr', null, Math.abs(inDay / ppl - n) < 0.25 ? 'mine' : 'clickable');
+      [String(n), fmt(pin), (pin - outDay > 0 ? '+' : '') + fmt1(pin - outDay),
+       d === null ? 'Never' : d === 0 ? 'Full' : fmt(Math.ceil(d)),
+       d === null || d === 0 ? '' : d > 260 ? 'Over a year' : niceDate(addWorkingDays(today, Math.ceil(d)))].forEach(function (v, i) {
+        var td = el('td', v, i ? 'r' : ''); td.setAttribute('data-label', cols[i]); tr.appendChild(td);
+      });
+      (function (loads) {
+        tr.tabIndex = 0;
+        var pick = function () { plTouched = true; plFill('plLoads', loads); plFill('plIn', loads * ppl); plCalc(); };
+        tr.addEventListener('click', pick);
+        tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') pick(); });
+      })(n);
+      tb.appendChild(tr);
+    }
+    t.appendChild(tb);
+  }
+
+  // Loads x pallets-per-load and pallets in/day stay in sync either way
+  ['plLoads', 'plPpl', 'plIn', 'plOut', 'plStart', 'plMax'].forEach(function (id) { $(id).addEventListener('input', function () { plTouched = true; }); });
+  $('plLoads').addEventListener('input', function () { plFill('plIn', plNum('plLoads') * (plNum('plPpl') || PALLETS_PER_LOAD)); plCalc(); });
+  $('plPpl').addEventListener('input', function () { plFill('plIn', plNum('plLoads') * (plNum('plPpl') || PALLETS_PER_LOAD)); plCalc(); });
+  $('plIn').addEventListener('input', function () { plFill('plLoads', plNum('plIn') / (plNum('plPpl') || PALLETS_PER_LOAD)); plCalc(); });
+  ['plOut', 'plStart', 'plMax'].forEach(function (id) { $(id).addEventListener('input', plCalc); });
+  $('plLoc').addEventListener('change', plReset);
+  $('plReset').addEventListener('click', plReset);
 
   $('anExport').addEventListener('click', function () {
     if (!an) { $('anStatus').textContent = 'Load the analytics first, then export.'; return; }

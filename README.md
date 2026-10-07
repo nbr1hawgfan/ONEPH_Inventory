@@ -98,3 +98,12 @@ calls the other tabs use. No Edge Function or database changes were needed.
 Max capacities live in the `CAPACITY` list in index.html (Zero Street 4,700, 5th Street 5,110,
 Van Buren 5,080). They're matched by location name, so a warehouse shows up even before it has
 One Source pallets. To add a warehouse, add a line there and bump `APP_VERSION` and the sw.js `CACHE`.
+
+## What-if fill planner (v1.7.0)
+At the bottom of the Analytics tab. Pick a building and change inbound loads per day, pallets per load
+(default 16), pallets in per day, pallets shipped per day, starting pallets, or max pallets, and it shows
+working days to full, the estimated full date, net pallets per day, and how that compares to the current
+pace. Loads x pallets per load and pallets in per day stay in sync, so either can be typed. A table below
+shows the same scenario at a range of inbound loads per day; select a row to try it. Every box starts at
+the building's current pace, "Reset to current pace" puts them back, and nothing here changes any data.
+Starting pallets can be edited to plan a building that hasn't started filling yet (Van Buren).
