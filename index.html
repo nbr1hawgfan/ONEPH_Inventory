@@ -128,6 +128,24 @@
   .st-gone { font-weight: 600; color: #8A5A00; }
   .st-none { font-weight: 700; color: var(--red-dark); }
 
+  /* Analytics */
+  .cap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; margin-bottom: 26px; }
+  .cap { border: 1px solid var(--line); border-top: 6px solid var(--black); border-radius: 4px; padding: 14px 18px 16px; }
+  .cap.hot { border-top-color: var(--red); }
+  .cap.idle { border-top-color: #BDBDBD; }
+  .cap .name { font-size: 17px; font-weight: 600; color: var(--black); }
+  .cap .pct { font-family: 'Barlow Semi Condensed', 'Arial Narrow', Arial, sans-serif; font-size: 40px; font-weight: 700; color: var(--black); line-height: 1.1; }
+  .cap.hot .pct { color: var(--red-dark); }
+  .cap .pct small { font-size: 18px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+  .meter { position: relative; height: 14px; background: var(--wash); border-radius: 2px; overflow: hidden; margin: 6px 0 8px; }
+  .meter div { height: 100%; background: var(--black); }
+  .cap.hot .meter div { background: var(--red); }
+  .cap .line { font-size: 16px; color: var(--ink); }
+  .cap .eta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .cap .eta b { font-family: 'Barlow Semi Condensed', 'Arial Narrow', Arial, sans-serif; font-size: 24px; color: var(--black); }
+  .cap .eta .sub2 { font-size: 15px; color: var(--muted); }
+  .neg { color: #2E6B2E; }
+
   @media (max-width: 760px) {
     body { font-size: 17px; }
     .bar h1 { font-size: 22px; }
@@ -182,6 +200,7 @@
   <button class="tab" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
   <button class="tab" role="tab" data-tab="lookup" aria-selected="false">Bulk Lookup</button>
   <button class="tab" role="tab" data-tab="carriers" aria-selected="false">Carriers</button>
+  <button class="tab" role="tab" data-tab="analytics" aria-selected="false">Analytics</button>
   <div id="quickLinks" class="quick-links" aria-label="Quick links"></div>
 </nav>
 
@@ -308,12 +327,36 @@
     <div class="scroll results-scroll"><table id="crLoads" class="results"></table></div>
   </section>
  </div>
+
+ <!-- Analytics -->
+ <div id="panel-analytics" class="panel hidden">
+  <section>
+    <h2>Capacity</h2>
+    <p id="anAsOf" class="asof"></p>
+    <div class="quick" id="anQuick">
+      <button class="chip" type="button" data-days="30">Last 30 days</button>
+      <button class="chip" type="button" data-days="60">Last 60 days</button>
+      <button class="chip" type="button" data-days="90">Last 90 days</button>
+      <button id="anExport" class="secondary export" type="button" style="margin-left:auto;">Export to Excel</button>
+    </div>
+    <div id="anStatus" class="status" role="status"></div>
+    <div id="anCards" class="cap-grid"></div>
+
+    <h3 id="anAvgHead" class="hidden">Average per working day</h3>
+    <div class="scroll"><table id="anTable" class="results"></table></div>
+    <div class="hint hidden" id="anHint">Working days are Monday to Friday, plus any weekend day with activity. Net per day is pallets received minus pallets shipped. Days to capacity divides the open positions by that net rate, so it moves as receiving and shipping pick up or slow down. Today is left out of the averages because it isn't finished yet.</div>
+
+    <h3 id="anChartHead" class="hidden">Estimated fill level by day</h3>
+    <div id="anChartWrap" class="chart-wrap hidden" style="height:340px;"><canvas id="anChart" aria-label="Percent of capacity by day for each location"></canvas></div>
+    <div class="hint hidden" id="anChartHint">Worked back from today's inventory using the receipts and shipments for each day. Inventory adjustments outside of loads aren't included, so earlier days are estimates.</div>
+  </section>
+ </div>
 </main>
 
 <footer id="footer" class="hidden">Logistics Warehouse, Inc. &middot; Fort Smith, AR &middot; <span id="ver"></span></footer>
 
 <script>
-  var APP_VERSION = 'v1.5.1';
+  var APP_VERSION = 'v1.6.0';
   var API = 'https://tjivcqxnkftujceumdtx.supabase.co/functions/v1/oneph-inventory';
   var LOC_COLORS = ['#C41230', '#1A1A1A', '#8A8A8A', '#E07A8A', '#5A0817', '#BDBDBD'];
   var COLS = [
@@ -670,13 +713,14 @@
   /* ---------- Tabs ---------- */
   var loadedTabs = {};
   function showTab(name) {
-    if (['inventory', 'transactions', 'lookup', 'carriers'].indexOf(name) === -1) name = 'inventory';
+    if (['inventory', 'transactions', 'lookup', 'carriers', 'analytics'].indexOf(name) === -1) name = 'inventory';
     document.querySelectorAll('.tab').forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.tab === name)); });
     document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('hidden', p.id !== 'panel-' + name); });
     if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
     if (name === 'transactions' && !loadedTabs.transactions) { loadedTabs.transactions = true; setRange('prevbiz'); loadTx(); }
     if (name === 'lookup') setTimeout(function () { $('lkIds').focus(); }, 0);
     if (name === 'carriers' && !loadedTabs.carriers) { loadedTabs.carriers = true; setCrRange('last30'); fillCrLocations(); loadCarriers(); }
+    if (name === 'analytics' && !loadedTabs.analytics) { loadedTabs.analytics = true; loadAnalytics(30); }
   }
   document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { showTab(t.dataset.tab); }); });
 
@@ -1231,6 +1275,296 @@
       $('crStatus').textContent = 'Downloaded ' + name + '.xlsx.';
     }).catch(function (err) { if (err.message !== 'SESSION_EXPIRED') $('crStatus').textContent = err.message; })
       .then(function () { btn.disabled = false; btn.textContent = 'Export to Excel'; });
+  });
+
+  /* ---------- Analytics ---------- */
+  /* Max pallet positions per warehouse. Matched against the location name, so a code change won't break it.
+     To add a warehouse: add a line here, bump APP_VERSION and the sw.js CACHE. */
+  var CAPACITY = [
+    { name: 'Zero Street', match: /\bzero\b/i,           max: 4700 },
+    { name: '5th Street',  match: /\b(5th|fifth)\b/i,    max: 5110 },
+    { name: 'Van Buren',   match: /\bvan\s*buren\b/i,    max: 5080 }
+  ];
+  var HOT_PCT = 85, HOT_DAYS = 20;   // card turns red at 85% full or under 20 working days left
+  var an = null, anChart = null;
+
+  function parseIso(s) { var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+  function addDays(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function isWeekend(d) { return d.getDay() === 0 || d.getDay() === 6; }
+  function addWorkingDays(d, n) { var x = new Date(d); while (n > 0) { x = addDays(x, 1); if (!isWeekend(x)) n--; } return x; }
+  function fmt1(n) { return (Math.round(Number(n || 0) * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
+  function niceDate(d) { return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
+  function capFor(label) { return CAPACITY.filter(function (c) { return c.match.test(String(label || '')); })[0] || null; }
+  function anKey(label) { var c = capFor(label); return c ? c.name : String(label || 'Unknown').replace(/\s*\([^)]*\)\s*$/, ''); }
+
+  document.querySelectorAll('#anQuick .chip').forEach(function (c) {
+    c.addEventListener('click', function () { loadAnalytics(Number(c.dataset.days)); });
+  });
+
+  function loadAnalytics(days) {
+    document.querySelectorAll('#anQuick .chip').forEach(function (c) { c.classList.toggle('on', Number(c.dataset.days) === days); });
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var to = addDays(today, -1), from = addDays(to, -(days - 1));
+    $('anStatus').textContent = 'Crunching the last ' + days + ' days...';
+    $('anCards').innerHTML = '';
+    // Pull through today so the fill-level history lines up with the live inventory count.
+    Promise.all([
+      summary ? Promise.resolve(summary) : api('summary'),
+      api('transactions', { from: isoDate(from), to: isoDate(today), direction: 'ALL' })
+    ]).then(function (res) {
+      if (!summary) summary = res[0];
+      an = buildAnalytics(res[0], res[1], from, to, today, days);
+      $('anStatus').textContent = res[1].from > isoDate(from) ? 'History is limited, so these numbers start ' + usDate(res[1].from) + '.' : '';
+      renderAnalytics();
+    }).catch(function (err) { $('anStatus').textContent = err.message === 'SESSION_EXPIRED' ? '' : err.message; });
+  }
+
+  function buildAnalytics(s, tx, from, to, today, days) {
+    var fromIso = isoDate(from), toIso = isoDate(to), todayIso = isoDate(today);
+    var locs = {}, order = [];
+    function loc(label) {
+      var k = anKey(label);
+      if (!locs[k]) {
+        var cap = capFor(label) || CAPACITY.filter(function (c) { return c.name === k; })[0] || null;
+        locs[k] = { name: k, max: cap ? cap.max : null, onHand: 0, inLoads: 0, outLoads: 0, inPal: 0, outPal: 0, daily: {} };
+        order.push(k);
+      }
+      return locs[k];
+    }
+    function day(L, iso) { return L.daily[iso] || (L.daily[iso] = { inLoads: 0, outLoads: 0, inPal: 0, outPal: 0 }); }
+
+    CAPACITY.forEach(function (c) { loc(c.name); });                 // capacity warehouses always show, even with no data yet
+    (s.locations || []).forEach(function (l) { loc(l.label).onHand += Number(l.pallets) || 0; });
+
+    var active = {};
+    (tx.loads || []).forEach(function (l) {
+      var d = String(l.date).slice(0, 10), L = loc(l.location), D = day(L, d);
+      if (l.direction === 'Inbound') D.inLoads++; else if (l.direction === 'Outbound') D.outLoads++;
+      active[d] = true;
+    });
+    (tx.pallets || []).forEach(function (p) {
+      var d = String(p.date).slice(0, 10), L = loc(p.location), D = day(L, d);
+      if (p.direction === 'Inbound') D.inPal++; else if (p.direction === 'Outbound') D.outPal++;
+      active[d] = true;
+    });
+
+    // Working days in the averaging window: weekdays, plus weekend days that had activity
+    var start = parseIso(tx.from && tx.from > fromIso ? tx.from : fromIso), work = 0, dates = [];
+    for (var d = new Date(start); d <= today; d = addDays(d, 1)) {
+      var iso = isoDate(d); dates.push(iso);
+      if (iso <= toIso && (!isWeekend(d) || active[iso])) work++;
+    }
+    work = Math.max(work, 1);
+
+    var rows = order.map(function (k) {
+      var L = locs[k];
+      Object.keys(L.daily).forEach(function (iso) {
+        if (iso > toIso) return;                                      // today isn't finished: keep it out of the averages
+        var D = L.daily[iso]; L.inLoads += D.inLoads; L.outLoads += D.outLoads; L.inPal += D.inPal; L.outPal += D.outPal;
+      });
+      var r = {
+        name: k, max: L.max, onHand: L.onHand, daily: L.daily,
+        inLoadsDay: L.inLoads / work, outLoadsDay: L.outLoads / work,
+        inPalDay: L.inPal / work, outPalDay: L.outPal / work,
+        loadsDay: (L.inLoads + L.outLoads) / work, netDay: (L.inPal - L.outPal) / work,
+        inLoads: L.inLoads, outLoads: L.outLoads, inPal: L.inPal, outPal: L.outPal,
+        hasActivity: L.inLoads + L.outLoads > 0
+      };
+      r.pct = r.max ? r.onHand / r.max * 100 : null;
+      r.open = r.max ? Math.max(r.max - r.onHand, 0) : null;
+      if (!r.max) r.state = 'nocap';
+      else if (r.onHand >= r.max) r.state = 'full';
+      else if (!r.hasActivity && !r.onHand) r.state = 'new';
+      else if (!r.hasActivity) r.state = 'quiet';
+      else if (r.netDay <= 0.05) r.state = 'steady';
+      else {
+        r.state = 'filling';
+        r.daysLeft = r.open / r.netDay;
+        r.fullDate = addWorkingDays(today, Math.ceil(r.daysLeft));
+      }
+      return r;
+    });
+    rows.sort(function (a, b) { return (b.max ? 1 : 0) - (a.max ? 1 : 0) || (b.onHand - a.onHand); });
+
+    // Fill level by day, worked back from today's count
+    rows.forEach(function (r) {
+      var level = r.onHand, hist = {};
+      for (var i = dates.length - 1; i >= 0; i--) {
+        hist[dates[i]] = level;
+        var D = r.daily[dates[i]];
+        if (D) level -= (D.inPal - D.outPal);
+      }
+      r.hist = hist;
+    });
+
+    return { rows: rows, dates: dates, work: work, from: dates[0], to: toIso, days: days, asOf: s.as_of };
+  }
+
+  function etaText(r) {
+    switch (r.state) {
+      case 'filling':
+        if (r.daysLeft > 260) return { big: 'Over a year', sub: 'Filling slowly at +' + fmt1(r.netDay) + ' pallets/day' };
+        return { big: (r.daysLeft < 1 ? 'Under 1' : fmt(Math.round(r.daysLeft))) + ' working days', sub: 'Full around ' + niceDate(r.fullDate) + ' at +' + fmt1(r.netDay) + ' pallets/day' };
+      case 'steady':  return { big: 'Not filling', sub: 'Shipping as fast or faster than receiving (' + (r.netDay < 0 ? '' : '+') + fmt1(r.netDay) + ' pallets/day)' };
+      case 'full':    return { big: 'At capacity', sub: fmt(r.onHand - r.max) + ' pallets over the max' };
+      case 'new':     return { big: 'Not started', sub: 'No One Source receipts here yet' };
+      case 'quiet':   return { big: 'No recent activity', sub: 'No loads in this period' };
+      default:        return { big: 'Capacity not set', sub: '' };
+    }
+  }
+
+  function renderAnalytics() {
+    var a = an;
+    $('anAsOf').textContent = 'Inventory as of ' + ctTime(a.asOf) + '. Daily rates use ' + rangeText(a.from, a.to) + ' (' + plural(a.work, 'working day') + ').';
+
+    // Capacity cards
+    var cards = $('anCards'); cards.innerHTML = '';
+    a.rows.filter(function (r) { return r.max; }).forEach(function (r) {
+      var hot = r.state === 'full' || r.pct >= HOT_PCT || (r.state === 'filling' && r.daysLeft < HOT_DAYS);
+      var c = el('div', null, 'cap' + (hot ? ' hot' : '') + (r.state === 'new' ? ' idle' : ''));
+      c.appendChild(el('div', r.name, 'name'));
+      var pct = el('div', Math.round(r.pct) + '%', 'pct'); pct.appendChild(el('small', 'full')); c.appendChild(pct);
+      var m = el('div', null, 'meter'); m.setAttribute('role', 'img'); m.setAttribute('aria-label', Math.round(r.pct) + ' percent full');
+      var fill = el('div'); fill.style.width = Math.min(r.pct, 100) + '%'; m.appendChild(fill); c.appendChild(m);
+      c.appendChild(el('div', fmt(r.onHand) + ' of ' + fmt(r.max) + ' pallets', 'line'));
+      c.appendChild(el('div', fmt(r.open) + ' open positions', 'line'));
+      var e = etaText(r), eta = el('div', null, 'eta');
+      eta.appendChild(el('div', 'Days to capacity', 'sub2'));
+      eta.appendChild(el('b', e.big));
+      if (e.sub) eta.appendChild(el('div', e.sub, 'sub2'));
+      c.appendChild(eta);
+      cards.appendChild(c);
+    });
+
+    // Averages table
+    var cols = [
+      { h: 'Location', k: 'name' },
+      { h: 'Receipt Loads / Day', k: 'inLoadsDay', d: 1 },
+      { h: 'Pallets In / Day', k: 'inPalDay', d: 1 },
+      { h: 'Shipment Loads / Day', k: 'outLoadsDay', d: 1 },
+      { h: 'Pallets Out / Day', k: 'outPalDay', d: 1 },
+      { h: 'Total Loads / Day', k: 'loadsDay', d: 1 },
+      { h: 'Net Pallets / Day', k: 'netDay', d: 1, sign: true },
+      { h: '% of Capacity', k: 'pct', pct: true },
+      { h: 'Days to Capacity', k: 'eta' }
+    ];
+    var t = $('anTable'); t.innerHTML = '';
+    var hr = el('tr'); cols.forEach(function (c, i) { hr.appendChild(el('th', c.h, i ? 'r' : '')); });
+    var thead = el('thead'); thead.appendChild(hr); t.appendChild(thead);
+    var tb = el('tbody');
+    var tot = { name: 'All locations', inLoadsDay: 0, inPalDay: 0, outLoadsDay: 0, outPalDay: 0, loadsDay: 0, netDay: 0, onHand: 0, max: 0 };
+    a.rows.forEach(function (r) {
+      ['inLoadsDay', 'inPalDay', 'outLoadsDay', 'outPalDay', 'loadsDay', 'netDay'].forEach(function (k) { tot[k] += r[k]; });
+      if (r.max) { tot.onHand += r.onHand; tot.max += r.max; }
+    });
+    tot.pct = tot.max ? tot.onHand / tot.max * 100 : null;
+    var totDays = tot.netDay > 0.05 && tot.max ? Math.max(tot.max - tot.onHand, 0) / tot.netDay : null;
+    tot.eta = totDays == null ? '' : totDays > 260 ? 'Over a year' : fmt(Math.round(totDays)) + ' days (combined)';
+    a.rows.forEach(function (r) { r.eta = r.state === 'filling' && r.daysLeft <= 260 ? fmt(Math.round(r.daysLeft)) + ' days' : etaText(r).big; });
+    a.rows.concat([tot]).forEach(function (r, i, all) {
+      var tr = el('tr', null, i === all.length - 1 ? 'total' : '');
+      cols.forEach(function (c, j) {
+        var v = r[c.k], txt;
+        if (c.d) txt = (c.sign && v > 0 ? '+' : '') + fmt1(v);
+        else if (c.pct) txt = v == null ? 'Not set' : Math.round(v) + '%';
+        else txt = v == null ? '' : String(v);
+        var td = el('td', txt, j ? 'r' : '');
+        if (c.sign && v < -0.05) td.classList.add('neg');
+        td.setAttribute('data-label', c.h);
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    ['anAvgHead', 'anHint'].forEach(function (id) { $(id).classList.remove('hidden'); });
+
+    // Fill level chart (percent of capacity so warehouses of different sizes compare fairly)
+    var plotted = a.rows.filter(function (r) { return r.max && (r.hasActivity || r.onHand); });
+    var showChart = plotted.length && typeof Chart !== 'undefined';
+    ['anChartHead', 'anChartWrap', 'anChartHint'].forEach(function (id) { $(id).classList.toggle('hidden', !showChart); });
+    if (!showChart) return;
+    if (anChart) anChart.destroy();
+    var colorFor = function (r) { return LOC_COLORS[a.rows.indexOf(r) % LOC_COLORS.length]; };
+    var datasets = plotted.map(function (r) {
+      return { label: r.name, data: a.dates.map(function (d) { return r.hist[d] / r.max * 100; }),
+               borderColor: colorFor(r), backgroundColor: colorFor(r), borderWidth: 3, pointRadius: 0, tension: 0.2,
+               _pallets: a.dates.map(function (d) { return r.hist[d]; }), _max: r.max };
+    });
+    datasets.push({ label: 'Capacity', data: a.dates.map(function () { return 100; }), borderColor: '#8A8A8A',
+                    borderDash: [6, 5], borderWidth: 2, pointRadius: 0, _cap: true });
+    anChart = new Chart($('anChart'), {
+      type: 'line',
+      data: { labels: a.dates.map(function (d) { var x = parseIso(d); return (x.getMonth() + 1) + '/' + x.getDate(); }), datasets: datasets },
+      options: {
+        maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+        scales: {
+          y: { min: 0, suggestedMax: 100, ticks: { font: { size: 14 }, callback: function (v) { return v + '%'; } },
+               title: { display: true, text: 'Percent of capacity', font: { size: 15 } } },
+          x: { ticks: { font: { size: 13 }, maxTicksLimit: 12, maxRotation: 0 } }
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 15 } } },
+          tooltip: { filter: function (i) { return !i.dataset._cap; }, callbacks: {
+            title: function (items) { return niceDate(parseIso(a.dates[items[0].dataIndex])); },
+            label: function (c) { return c.dataset.label + ': ' + Math.round(c.raw) + '% (' + fmt(c.dataset._pallets[c.dataIndex]) + ' of ' + fmt(c.dataset._max) + ' pallets)'; }
+          } }
+        }
+      }
+    });
+  }
+
+  $('anExport').addEventListener('click', function () {
+    if (!an) { $('anStatus').textContent = 'Load the analytics first, then export.'; return; }
+    if (typeof XLSX === 'undefined') { $('anStatus').textContent = 'Export is unavailable right now. Reload the page and try again.'; return; }
+    var wb = XLSX.utils.book_new();
+    var r2 = function (n) { return Math.round(Number(n) * 100) / 100; };
+    var capRows = an.rows.map(function (r) {
+      return { name: r.name, onHand: r.onHand, max: r.max == null ? '' : r.max, open: r.open == null ? '' : r.open,
+               pct: r.max ? r2(r.pct / 100) : '', inLoadsDay: r2(r.inLoadsDay), inPalDay: r2(r.inPalDay),
+               outLoadsDay: r2(r.outLoadsDay), outPalDay: r2(r.outPalDay), loadsDay: r2(r.loadsDay), netDay: r2(r.netDay),
+               daysLeft: r.state === 'filling' ? Math.round(r.daysLeft) : '', fullDate: r.state === 'filling' ? isoDate(r.fullDate) : '',
+               note: r.state === 'filling' ? '' : etaText(r).big };
+    });
+    var capCols = [
+      { h: 'Location', k: 'name', w: 18 }, { h: 'Pallets On Hand', k: 'onHand', w: 15, num: true },
+      { h: 'Max Pallets', k: 'max', w: 12, num: true }, { h: 'Open Positions', k: 'open', w: 14, num: true },
+      { h: '% of Capacity', k: 'pct', w: 13, num: true },
+      { h: 'Receipt Loads / Day', k: 'inLoadsDay', w: 18, num: true }, { h: 'Pallets In / Day', k: 'inPalDay', w: 15, num: true },
+      { h: 'Shipment Loads / Day', k: 'outLoadsDay', w: 19, num: true }, { h: 'Pallets Out / Day', k: 'outPalDay', w: 16, num: true },
+      { h: 'Total Loads / Day', k: 'loadsDay', w: 16, num: true }, { h: 'Net Pallets / Day', k: 'netDay', w: 16, num: true },
+      { h: 'Working Days to Capacity', k: 'daysLeft', w: 22, num: true }, { h: 'Est. Full Date', k: 'fullDate', w: 14, date: true },
+      { h: 'Note', k: 'note', w: 22 }
+    ];
+    var ws = toSheet(capRows, capCols);
+    for (var R = 1; R <= capRows.length; R++) {
+      var pc = ws[XLSX.utils.encode_cell({ r: R, c: 4 })]; if (pc && pc.t === 'n') pc.z = '0.0%';
+      for (var C = 5; C <= 10; C++) { var x = ws[XLSX.utils.encode_cell({ r: R, c: C })]; if (x && x.t === 'n') x.z = '0.0'; }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, 'Capacity');
+
+    var dayRows = [];
+    an.dates.forEach(function (d) {
+      an.rows.forEach(function (r) {
+        var D = r.daily[d] || { inLoads: 0, outLoads: 0, inPal: 0, outPal: 0 };
+        if (!r.max && !D.inLoads && !D.outLoads) return;
+        dayRows.push({ date: d, name: r.name, inLoads: D.inLoads, inPal: D.inPal, outLoads: D.outLoads, outPal: D.outPal,
+                       net: D.inPal - D.outPal, level: r.hist[d], pct: r.max ? r2(r.hist[d] / r.max) : '' });
+      });
+    });
+    var dayCols = [
+      { h: 'Date', k: 'date', w: 12, date: true }, { h: 'Location', k: 'name', w: 18 },
+      { h: 'Receipt Loads', k: 'inLoads', w: 13, num: true }, { h: 'Pallets In', k: 'inPal', w: 11, num: true },
+      { h: 'Shipment Loads', k: 'outLoads', w: 14, num: true }, { h: 'Pallets Out', k: 'outPal', w: 11, num: true },
+      { h: 'Net Pallets', k: 'net', w: 11, num: true }, { h: 'Est. Pallets On Hand', k: 'level', w: 18, num: true },
+      { h: 'Est. % of Capacity', k: 'pct', w: 17, num: true }
+    ];
+    var ws2 = toSheet(dayRows, dayCols);
+    for (var R2 = 1; R2 <= dayRows.length; R2++) { var p2 = ws2[XLSX.utils.encode_cell({ r: R2, c: 8 })]; if (p2 && p2.t === 'n') p2.z = '0.0%'; }
+    XLSX.utils.book_append_sheet(wb, ws2, 'Daily Activity');
+
+    var name = 'One Source Capacity ' + mdy(isoDate(new Date()));
+    XLSX.writeFile(wb, name + '.xlsx');
+    $('anStatus').textContent = 'Downloaded ' + name + '.xlsx.';
   });
 
   /* ---------- Start ---------- */

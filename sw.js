@@ -1,7 +1,7 @@
 /* One Source Inventory - service worker
    Caches the app shell only. Inventory data (POST to Supabase) is never cached.
    Bump CACHE when deploying so users get the new version. */
-const CACHE = 'oneph-inventory-v1.5.1';
+const CACHE = 'oneph-inventory-v1.6.0';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

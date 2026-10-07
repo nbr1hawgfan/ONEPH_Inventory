@@ -80,3 +80,21 @@ The change shows up immediately with no app update. The displayed name is the mo
 The workbook is built in the browser with SheetJS. IDs stay as text, so Excel won't convert them
 to scientific notation. Each export gets one tab per location plus autofilters. The free SheetJS
 edition can't do frozen or colored header rows; the daily email attachment still has those.
+
+## Analytics tab (v1.6.0)
+Capacity and pace for each warehouse, built in the browser from the same `summary` and `transactions`
+calls the other tabs use. No Edge Function or database changes were needed.
+- **Capacity cards:** pallets on hand, percent of max, open positions, and estimated working days to
+  capacity with a projected full date. A card turns red at 85% full or under 20 working days left.
+- **Average per working day:** receipt and shipment loads, pallets in and out, and net pallets per day,
+  over the last 30, 60, or 90 days. Working days are Mon to Fri plus any weekend day with activity.
+  Today is left out of the averages.
+- **Days to capacity** = open positions / net pallets per day. If a warehouse is shipping as fast as it
+  receives it shows "Not filling"; past about a year it shows "Over a year".
+- **Fill level chart:** percent of capacity by day, worked back from today's inventory using each day's
+  receipts and shipments (adjustments outside of loads aren't included).
+- **Export:** "Capacity" and "Daily Activity" tabs.
+
+Max capacities live in the `CAPACITY` list in index.html (Zero Street 4,700, 5th Street 5,110,
+Van Buren 5,080). They're matched by location name, so a warehouse shows up even before it has
+One Source pallets. To add a warehouse, add a line there and bump `APP_VERSION` and the sw.js `CACHE`.
